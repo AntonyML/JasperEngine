@@ -12,7 +12,12 @@
 #include "SymlinkSupport.h"
 #include "yaml-cpp/yaml.h"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #endif
 
@@ -67,8 +72,16 @@ TEST(BuiltPlayers, RecordedPlayerVerifies) {
     const YAML::Node e = root["desktop"];
     EXPECT_EQ(e["resolved"].as<std::string>(), fs::canonical(d.exe).string());
 #ifdef _WIN32
-    EXPECT_EQ(e["dev"].as<std::uint64_t>(), 0u);
-    EXPECT_EQ(e["ino"].as<std::uint64_t>(), 0u);
+    // the file's identity: its volume serial number and its file index
+    const HANDLE file = CreateFileW(fs::canonical(d.exe).c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    ASSERT_NE(file, INVALID_HANDLE_VALUE);
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool identified = GetFileInformationByHandle(file, &info) != FALSE;
+    CloseHandle(file);
+    ASSERT_TRUE(identified);
+    EXPECT_EQ(e["dev"].as<std::uint64_t>(), static_cast<std::uint64_t>(info.dwVolumeSerialNumber));
+    EXPECT_EQ(e["ino"].as<std::uint64_t>(), (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow);
     EXPECT_EQ(e["size"].as<std::uint64_t>(), static_cast<std::uint64_t>(fs::file_size(d.exe)));
     EXPECT_EQ(e["mtime"].as<std::int64_t>(), static_cast<std::int64_t>(fs::last_write_time(d.exe).time_since_epoch().count()));
 #else
