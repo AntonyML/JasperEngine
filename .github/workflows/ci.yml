@@ -883,7 +883,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_macos == 'true'
     runs-on: macos-latest
-    timeout-minutes: 180
+    # cold (no ccache yet): editor 81 min, engine and core tests 63, CPU tests 18, then compile-smoke
+    timeout-minutes: 300
     env:
       JASPER_CI_REPRO: tools/ci/macos.sh
     steps:
