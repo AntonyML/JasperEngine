@@ -107,7 +107,8 @@ TEST(SvnProvider, EndToEnd) {
     VcsResult result = offMain([&]() { return alice.commit(std::vector<RepoPath>{"a.txt", "icon@2x.lua", "art/needs.bin"}, "add files", revision); });
     ASSERT_TRUE(result.ok) << result.message;
     EXPECT_EQ(revision, "1");
-    box.svnOk(wcA, {"propset", "svn:needs-lock", "*", "art/needs.bin"});
+    // not "*": svn on Windows (APR) expands that argument as a wildcard; any value is stored as "*"
+    box.svnOk(wcA, {"propset", "svn:needs-lock", "yes", "art/needs.bin"});
     result = offMain([&]() { return alice.commit(std::vector<RepoPath>{"art/needs.bin"}, "needs-lock", revision); });
     ASSERT_TRUE(result.ok) << result.message;
     EXPECT_EQ(revision, "2");
