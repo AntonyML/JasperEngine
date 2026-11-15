@@ -1093,6 +1093,7 @@ set(JASPERENGINE_EDITOR_SOURCES
     ${EDITOR_DIR}/util/LuaApiData.cpp
     ${EDITOR_DIR}/util/NumericExpression.cpp
     ${EDITOR_DIR}/util/LineDiff.cpp
+    ${EDITOR_DIR}/util/ThreadCpuTime.cpp
     ${EDITOR_DIR}/util/ProjectChecks.cpp
     ${EDITOR_DIR}/util/ShaderGlobalsJson.cpp
     ${EDITOR_DIR}/util/ShaderGlobalsUsage.cpp
