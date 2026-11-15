@@ -213,10 +213,22 @@ std::unique_ptr<titleart::TitleRenderJob> TitleArtRenderHost::begin(Project* pro
 }
 
 std::unique_ptr<titleart::TitleRenderJob> TitleArtRenderHost::runToEnd(Project* project, titleart::RenderRequest request, std::string& error) {
+    constexpr const char* NOT_READY = "not_ready: a title art program is still being built; the render runs once it is";
+    // after a render stopped at a program, the next ones wait while shaders are being built or
+    // created: started now they would only meet it again, and a caller that runs many renders
+    // (check_title) would repeat its finished ones on every frame of the build
+    static bool buildingSinceNotReady = false;     // the editor's one host: its last render stopped at a program
+    if (buildingSinceNotReady && !ShaderPool::isCreationIdle()) {
+        notReadyRenders++;
+        error = NOT_READY;
+        return nullptr;
+    }
+    buildingSinceNotReady = false;
     std::unique_ptr<titleart::TitleRenderJob> job = begin(project, std::move(request), error);
     if (!job) return nullptr;
     // no later frame for this call: its first draws are not spread over frames (S86's TitleFirstDraws)
     titleart::TitleFirstDraws::SynchronousScope synchronous;
+    const auto started = std::chrono::steady_clock::now();
     bool askedAgain = false;
     while (!job->done()) {
         if (job->step(titleart::StepBudget{})) break;
@@ -231,11 +243,16 @@ std::unique_ptr<titleart::TitleRenderJob> TitleArtRenderHost::runToEnd(Project* 
             askedAgain = true;
             continue;
         }
+        // no shader is being built or created: the step waits for work that each call advances
+        // (a 3D layer's build runs a share per call), so the calls go on, for at most a slice of
+        // a third of the hang threshold (S80 deviation 58's bound)
+        if (ShaderPool::isCreationIdle() && std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1000)) continue;
         // the frames build the program (in the background, created off the render thread), so the
         // main thread does not wait for it here; the job's other programs build alongside
         for (const ShaderKey& key : job->shaderKeys()) ShaderPool::warmUp(key);
         notReadyRenders++;
-        error = "not_ready: a title art program is still being built; the render runs once it is";
+        buildingSinceNotReady = true;
+        error = NOT_READY;
         return nullptr;
     }
     return job;
