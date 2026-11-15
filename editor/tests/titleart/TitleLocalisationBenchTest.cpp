@@ -67,7 +67,9 @@ TEST(TitleLocalisationBench, MatchAndGlobal) {
     EXPECT_EQ(found, 10000u);
     // the wall-clock budgets: enforced where perfSlack() asks for them (the benchmark run)
     const double slack = jasperengine::editor::test::perfSlack();
-    if (slack > 0.0) EXPECT_LE(perMatchUs, 2.0 * slack);
+    if (slack > 0.0) {
+        EXPECT_LE(perMatchUs, 2.0 * slack);
+    }
 
     TitleArtLanguage::resetForTesting();
     std::vector<int> ids;
@@ -78,7 +80,9 @@ TEST(TitleLocalisationBench, MatchAndGlobal) {
     const double setMs = ms(set);
     std::printf("TitleArt.setLanguage with 100 listeners: %.4f ms\n", setMs);
     EXPECT_EQ(marked, 100u);
-    if (slack > 0.0) EXPECT_LE(setMs, 0.3 * slack);
+    if (slack > 0.0) {
+        EXPECT_LE(setMs, 0.3 * slack);
+    }
     TitleArtLanguage::resetForTesting();
 }
 

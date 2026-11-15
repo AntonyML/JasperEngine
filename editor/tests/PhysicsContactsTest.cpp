@@ -1019,7 +1019,9 @@ TEST_F(PhysicsContactsTest, ContactProcessingCostIsSmall) {
             std::printf("[cost] Lua garbage: %.0f bytes a callback (%.0f callbacks)\n", bytesPerCallback, callbacks);
             EXPECT_LT(bytesPerCallback, bytesPerCallbackBudget) << "Lua bytes a callback";
         } else {
-            if (enforce) EXPECT_LT(minContacts, minStep * quietBudget) << "step " << minStep << " s, contacts " << minContacts << " s";
+            if (enforce) {
+                EXPECT_LT(minContacts, minStep * quietBudget) << "step " << minStep << " s, contacts " << minContacts << " s";
+            }
             EXPECT_EQ(physics()->getContactTracker3D().recordedCount(), 0u);
         }
     }

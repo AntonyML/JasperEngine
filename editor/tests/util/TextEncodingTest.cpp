@@ -66,7 +66,7 @@ TEST(TextEncoding, ProcessRunsInTheUtf8CodePage) {
 // checked: POSIX passes its bytes through; Windows (UTF-16 names, whose standard conversions
 // throw) carries a stray byte as U+DC80 + byte and a lone surrogate in its three-byte form
 TEST(TextEncoding, PathConversionsKeepNamesThatAreNotUtf8) {
-    for (const std::string text : {std::string("assets/caf\xC3\xA9 \xF0\x9F\x99\x82.png"), std::string("assets/caf\xE9.png"),
+    for (const std::string& text : {std::string("assets/caf\xC3\xA9 \xF0\x9F\x99\x82.png"), std::string("assets/caf\xE9.png"),
                                    std::string("\xC0\xAF\xE2\x82"), std::string("a\xED\xA0\x80z")}) {
         std::string back;
         EXPECT_NO_THROW(back = FileUtils::pathToUtf8(FileUtils::pathFromUtf8(text))) << text;
