@@ -2437,6 +2437,12 @@ set_source_files_properties(${JASPERENGINE_ANIMATOR_SRCS} PROPERTIES COMPILE_OPT
 set_source_files_properties(core/audio/AudioMeter.cpp PROPERTIES COMPILE_OPTIONS "${JASPERENGINE_ANIMATOR_FLAGS}")
 set_source_files_properties(libs/soloud/src/audiosource/wav/stb_vorbis.c libs/soloud/src/audiosource/wav/dr_impl.cpp
     libs/soloud/src/audiosource/wav/soloud_wav.cpp libs/soloud/src/core/soloud_fft.cpp DIRECTORY libs/soloud PROPERTIES COMPILE_OPTIONS "${JASPERENGINE_ANIMATOR_FLAGS}")
+# and the same pi: stb_vorbis falls back to a float M_PI where <math.h> has none (the Windows CRT
+# without _USE_MATH_DEFINES, which the jasperengine target sets but not soloud's), and every Ogg
+# Vorbis decode's twiddles and window then differed from the other platforms' in the last bit
+if(WIN32)
+    target_compile_definitions(soloud PRIVATE _USE_MATH_DEFINES)
+endif()
 if(EMSCRIPTEN)
     if(JASPERENGINE_WASM_SIMD)
         set_source_files_properties(core/animation/AnimatorPose.cpp PROPERTIES COMPILE_OPTIONS "${JASPERENGINE_ANIMATOR_FLAGS};-msimd128")
