@@ -1025,7 +1025,14 @@ void checkTitleTool(const CallPtr& call) {
                 return true;
             };
         }
+        const uint64_t waits = TitleArtRenderHost::editor().notReadyCount();
         const TitleCheckReport report = TitleArtChecks::run(selected, context);
+        // a render met a program still being built: the checks run again on a later frame, as the
+        // frames build it (S80 Deviation 61)
+        if (TitleArtRenderHost::editor().notReadyCount() != waits) {
+            job.setProgress(-1.0, "waiting for title art programs to be built");
+            return false;
+        }
         Json result = fromOrdered(report.toJson());
         result["path"] = rel;
         result["rev"] = doc->revision();

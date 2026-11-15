@@ -7,7 +7,7 @@
 #include "asset/Guid.h"
 #include "asset/AssetFileWrite.h"
 #include "render/FrameReadback.h"
-#include "render/SystemRender.h"
+#include "pool/ShaderPool.h"
 #include "texture/TexturePrepare.h"
 #include "titleart/TitleArtHash.h"
 #include "titleart/render/TitleGpu.h"
@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <thread>
 
 using namespace jasperengine;
 using namespace jasperengine::editor;
@@ -216,22 +215,28 @@ std::unique_ptr<titleart::TitleRenderJob> TitleArtRenderHost::begin(Project* pro
 std::unique_ptr<titleart::TitleRenderJob> TitleArtRenderHost::runToEnd(Project* project, titleart::RenderRequest request, std::string& error) {
     std::unique_ptr<titleart::TitleRenderJob> job = begin(project, std::move(request), error);
     if (!job) return nullptr;
-    // no editor frame runs while this call does, so a program the job waits for (built in the
-    // background, created off the render thread) is published here, within a deadline, and the
-    // first draws are not spread over frames (S86's TitleFirstDraws)
+    // no later frame for this call: its first draws are not spread over frames (S86's TitleFirstDraws)
     titleart::TitleFirstDraws::SynchronousScope synchronous;
-    constexpr double PROGRAM_WAIT_MS = 60000.0;
-    const auto waitStart = std::chrono::steady_clock::now();
+    bool askedAgain = false;
     while (!job->done()) {
         if (job->step(titleart::StepBudget{})) break;
         if (job->failed()) break;
-        if (!job->waiting()) continue;
-        if (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count() > PROGRAM_WAIT_MS) {
-            error = "a title art program was not built within " + std::to_string(static_cast<int>(PROGRAM_WAIT_MS / 1000.0)) + " s";
-            return nullptr;
+        if (!job->waiting()) {
+            askedAgain = false;
+            continue;
         }
-        SystemRender::waitGpuCreationIdle(5.0);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // once more: a step whose programs became ready runs on the next call (a kernel's), and a
+        // program found unbuildable fails it there
+        if (!askedAgain) {
+            askedAgain = true;
+            continue;
+        }
+        // the frames build the program (in the background, created off the render thread), so the
+        // main thread does not wait for it here; the job's other programs build alongside
+        for (const ShaderKey& key : job->shaderKeys()) ShaderPool::warmUp(key);
+        notReadyRenders++;
+        error = "not_ready: a title art program is still being built; the render runs once it is";
+        return nullptr;
     }
     return job;
 }
