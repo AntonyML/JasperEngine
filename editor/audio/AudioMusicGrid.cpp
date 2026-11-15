@@ -8,6 +8,7 @@
 
 #include "io/AtomicFile.h"
 #include "jobs/JobSystem.h"
+#include "math/PortableMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -145,8 +146,8 @@ double interpolated(const std::vector<double>& a, double lag) {
 }
 
 double priorWeight(double bpm) {
-    const double octaves = std::log2(bpm / SoundTypes::MUSIC_GRID_PRIOR_BPM);
-    return std::exp(-0.5 * octaves * octaves);
+    const double octaves = portablemath::log2(bpm / SoundTypes::MUSIC_GRID_PRIOR_BPM);
+    return portablemath::exp(-0.5 * octaves * octaves);
 }
 
 // Ellis 2007: C[t] = o[t] + max over u in [t - 2P, t - P/2] of C[u] - tightness x ln((t - u) / P)^2,
@@ -159,7 +160,7 @@ std::vector<size_t> trackBeats(const std::vector<double>& o, double period) {
     const long farthest = (long)std::floor(2.0 * period);
     std::vector<double> penalty((size_t)farthest + 1, 0.0);
     for (long d = std::max(1L, nearest); d <= farthest; d++) {
-        const double l = std::log((double)d / period);
+        const double l = portablemath::log((double)d / period);
         penalty[(size_t)d] = SoundTypes::MUSIC_GRID_TIGHTNESS * l * l;
     }
     std::vector<double> score(n);

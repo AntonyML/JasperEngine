@@ -13,6 +13,7 @@
 
 #include "audio/AudioFileCheck.h"
 #include "io/AtomicFile.h"
+#include "math/PortableMath.h"
 
 #include "soloud.h"
 #include "soloud_fft.h"
@@ -72,7 +73,7 @@ const double PITCH_FIRST_PEAK_SHARE = 0.9;
 const double ROLLOFF_SHARE = 0.85;
 
 double dbOfAmplitude(double amplitude) {
-    return amplitude > 0.0 ? std::max(SILENCE_DB, 20.0 * std::log10(amplitude)) : SILENCE_DB;
+    return amplitude > 0.0 ? std::max(SILENCE_DB, 20.0 * portablemath::log10(amplitude)) : SILENCE_DB;
 }
 
 double rmsDb(double meanSquare) {
@@ -93,7 +94,7 @@ const std::vector<float>& hannWindow() {
     static const std::vector<float> window = []() {
         std::vector<float> w(AudioAnalysis::FFT_SIZE);
         for (int i = 0; i < AudioAnalysis::FFT_SIZE; i++) {
-            w[i] = (float)(0.5 - 0.5 * std::cos(2.0 * PI * i / AudioAnalysis::FFT_SIZE));
+            w[i] = (float)(0.5 - 0.5 * portablemath::cos(2.0 * PI * i / AudioAnalysis::FFT_SIZE));
         }
         return w;
     }();
@@ -435,7 +436,7 @@ void AudioAnalysis::magnitudes(const float* mono, size_t samples, size_t index, 
     }
     SoLoud::FFT::fft(buffer.data(), 2 * FFT_SIZE);
     for (int k = 0; k <= FFT_SIZE / 2; k++) {
-        out[k] = std::hypot(buffer[2 * k], buffer[2 * k + 1]);
+        out[k] = portablemath::hypot(buffer[2 * k], buffer[2 * k + 1]);
     }
 }
 
@@ -580,7 +581,7 @@ Json AudioAnalysis::loopSeam(const Signal& signal, size_t start, size_t end) {
                 addSteps(0, w);
             }
             const double reference = std::max(SEAM_REFERENCE_FLOOR, count > 0 ? std::sqrt(square / (double)count) : 0.0);
-            if (jump > 0.0) stepDb = std::max(stepDb, 20.0 * std::log10(jump / reference));
+            if (jump > 0.0) stepDb = std::max(stepDb, 20.0 * portablemath::log10(jump / reference));
         }
         const size_t edge = std::max<size_t>(1, std::min(n, w));
         double head = 0.0, tail = 0.0;
@@ -656,7 +657,7 @@ Json AudioAnalysis::measure(const Signal& signal, AudioMeterMode mode, std::vect
         double square = 0.0;
         for (size_t i = start; i < end; i++) square += (double)mono[i] * mono[i];
         const double frameRms = end > start ? std::sqrt(square / (double)(end - start)) : 0.0;
-        if (frameRms <= 0.0 || 20.0 * std::log10(frameRms) + AES17_OFFSET < SPECTRAL_FLOOR_DBFS) continue;
+        if (frameRms <= 0.0 || 20.0 * portablemath::log10(frameRms) + AES17_OFFSET < SPECTRAL_FLOOR_DBFS) continue;
 
         double energy = 0.0, magSum = 0.0, weighted = 0.0, logSum = 0.0;
         for (int k = 1; k <= bins; k++) {
@@ -665,12 +666,12 @@ Json AudioAnalysis::measure(const Signal& signal, AudioMeterMode mode, std::vect
             energy += p;
             magSum += m;
             weighted += k * binHz * m;
-            logSum += std::log(p + 1e-30);
+            logSum += portablemath::log(p + 1e-30);
             binEnergy[k] += p;
         }
         if (energy <= 0.0 || magSum <= 0.0) continue;
         const double arithmetic = energy / bins + 1e-30;
-        const double geometric = std::exp(logSum / bins);
+        const double geometric = portablemath::exp(logSum / bins);
         centroidSum += energy * (weighted / magSum);
         flatnessSum += energy * std::min(1.0, geometric / arithmetic);
         weightSum += energy;
@@ -947,7 +948,7 @@ double amplitudeDb(double amplitude) {
 }
 
 double amplitudeOfDb(double db) {
-    return std::pow(10.0, db / 20.0);
+    return portablemath::pow(10.0, db / 20.0);
 }
 
 // a clip's gain as AudioClipSource computes it (in float)
@@ -1155,8 +1156,8 @@ GapSide gapSideOf(const X& x, size_t b, bool before, double rate) {
     }
     out.valid = true;
     out.v = v;
-    out.level = v > 0.0 ? 20.0 * std::log10(v / largest) : -std::numeric_limits<double>::infinity();
-    out.envelope = rms > 0.0 && nearRms > 0.0 ? 20.0 * std::log10(nearRms / rms) : -std::numeric_limits<double>::infinity();
+    out.level = v > 0.0 ? 20.0 * portablemath::log10(v / largest) : -std::numeric_limits<double>::infinity();
+    out.envelope = rms > 0.0 && nearRms > 0.0 ? 20.0 * portablemath::log10(nearRms / rms) : -std::numeric_limits<double>::infinity();
     out.largest = largest;
     return out;
 }
@@ -1500,9 +1501,9 @@ Json resonanceOf(const std::vector<double>& power, double rate) {
     const double top = std::min(SoundTypes::RESONANCE_MAX_HZ, SoundTypes::RESONANCE_MAX_RATE_SHARE * rate);
     std::vector<double> grid, points;
     for (int i = 0;; i++) {
-        const double g = SoundTypes::RESONANCE_MIN_HZ * std::pow(2.0, i / SoundTypes::RESONANCE_POINTS_PER_OCTAVE);
+        const double g = SoundTypes::RESONANCE_MIN_HZ * portablemath::pow(2.0, i / SoundTypes::RESONANCE_POINTS_PER_OCTAVE);
         if (g > top) break;
-        const double half = std::pow(2.0, 1.0 / (2.0 * SoundTypes::RESONANCE_POINTS_PER_OCTAVE));
+        const double half = portablemath::pow(2.0, 1.0 / (2.0 * SoundTypes::RESONANCE_POINTS_PER_OCTAVE));
         const long k0 = (long)std::ceil(g / half / binHz);
         const long k1 = std::min((long)bins - 1, (long)std::floor(g * half / binHz));
         double largest;
@@ -1551,7 +1552,7 @@ std::vector<float> aliasingPower(const std::vector<float>& m, size_t& frames) {
         std::vector<float> w(SoundTypes::ALIASING_FFT_SIZE);
         for (int j = 0; j < SoundTypes::ALIASING_FFT_SIZE; j++) {
             double v = 0.0;
-            for (int t = 0; t < BLACKMAN_HARRIS_TERMS; t++) v += BLACKMAN_HARRIS[t] * std::cos(2.0 * PI * t * j / SoundTypes::ALIASING_FFT_SIZE);
+            for (int t = 0; t < BLACKMAN_HARRIS_TERMS; t++) v += BLACKMAN_HARRIS[t] * portablemath::cos(2.0 * PI * t * j / SoundTypes::ALIASING_FFT_SIZE);
             w[j] = (float)v;
         }
         return w;
@@ -1785,7 +1786,7 @@ size_t AudioAnalysis::safeFadeInFrames(const std::vector<double>& squares, doubl
     const size_t window = std::min(squares.size(), (size_t)std::llround(SoundTypes::ATTACK_WINDOW_SECONDS * rate));
     double energy = 0.0;
     for (size_t k = 0; k < window; k++) energy += squares[k];
-    const double allowed = energy * (1.0 - std::pow(10.0, -SoundTypes::FADE_IN_MAX_LOSS_DB / 10.0));
+    const double allowed = energy * (1.0 - portablemath::pow(10.0, -SoundTypes::FADE_IN_MAX_LOSS_DB / 10.0));
     for (size_t fade = longest; fade >= SoundTypes::FADE_IN_MIN_FRAMES; fade--) {
         double loss = 0.0;
         for (size_t k = 0; k < fade; k++) {
@@ -1887,7 +1888,7 @@ bool AudioAnalysis::analyzeBytes(const std::string& bytes, Json& cached, std::st
 Json AudioAnalysis::silence(const Signal& signal) {
     const size_t n = signal.frames;
     const double rate = signal.sampleRate > 0 ? (double)signal.sampleRate : 1.0;
-    const double silenceLevel = std::pow(10.0, SoundTypes::SILENCE_THRESHOLD_DBFS / 20.0);
+    const double silenceLevel = portablemath::pow(10.0, SoundTypes::SILENCE_THRESHOLD_DBFS / 20.0);
     long first = -1, last = -1;
     for (size_t i = 0; i < n; i++) {
         if (channelMaximum(signal, i) >= silenceLevel) {
