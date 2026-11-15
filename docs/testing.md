@@ -802,10 +802,12 @@ SANITIZE=address,undefined HTMLUI_TEST_ARGS='--gtest_filter=-*Golden*' tools/bui
 `engine/cmake/JasperSanitizers.cmake` adds `-fsanitize=<list> -fno-omit-frame-pointer` to every
 target of the tree, vendored libraries included (uninstrumented code gives TSan false positives),
 plus `-fno-sanitize-recover=undefined -fno-sanitize=vptr` with `undefined` (`function` too on
-Clang), and defines `JASPERENGINE_SANITIZE_ADDRESS`, `_UNDEFINED` and `_THREAD` so tests can relax
-time budgets. `thread` with `address` is a configure error, as are `thread` and `undefined` on MSVC
-and any sanitizer on Emscripten, Android or iOS. On MSVC, `address` switches to the DLL runtime,
-drops `/RTC1`, links with `/INCREMENTAL:NO`, defines `_DISABLE_STL_ANNOTATION`, and copies
+Clang), `-O1` in Debug (at `-O0` the editor test binary's instrumentation data alone passed the
+2 GB that x86-64's small code model reaches, and it did not link), and defines
+`JASPERENGINE_SANITIZE_ADDRESS`, `_UNDEFINED` and `_THREAD` so tests can relax time budgets.
+`thread` with `address` is a configure error, as are `thread` and `undefined` on MSVC and any
+sanitizer on Emscripten, Android or iOS. On MSVC, `address` switches to the DLL runtime, drops `/RTC1`,
+links with `/INCREMENTAL:NO`, defines `_DISABLE_STL_ANNOTATION`, and copies
 `clang_rt.asan_dynamic-x86_64.dll` next to every executable so they start from a plain shell.
 
 A sanitizer `linux` build installs like a normal one, unstripped (the reports need the symbols),
