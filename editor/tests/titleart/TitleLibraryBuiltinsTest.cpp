@@ -15,6 +15,7 @@
 #include "titleart/library/TitleLibrary.h"
 #include "titleart/library/TitleLibraryApply.h"
 #include "titleart/three_d/Title3DConvert.h"
+#include "support/EditorTestSupport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -284,10 +285,13 @@ TEST_F(TitleLibraryBuiltins, Budgets) {
     }
     std::cout << "AC21: index " << median(index) << " ms (R40 60), apply_look 16 rims " << median(look) << " ms (3), apply_color_scheme one layer " << median(scheme)
               << " ms (2), 64 layers " << median(scheme64) << " ms (25)\n";
-    EXPECT_LE(median(index), 60.0 * 3);
-    EXPECT_LE(median(look), 3.0 * 3);
-    EXPECT_LE(median(scheme), 2.0 * 3);
-    EXPECT_LE(median(scheme64), 25.0 * 3);
+    // wall-clock budgets (R40's, 3 times over): enforced where perfSlack() asks for them (the benchmark run)
+    if (const double slack = jasperengine::editor::test::perfSlack(); slack > 0.0) {
+        EXPECT_LE(median(index), 60.0 * 3 * slack);
+        EXPECT_LE(median(look), 3.0 * 3 * slack);
+        EXPECT_LE(median(scheme), 2.0 * 3 * slack);
+        EXPECT_LE(median(scheme64), 25.0 * 3 * slack);
+    }
 }
 
 TEST_F(TitleLibraryBuiltins, MatchesPachislop) {

@@ -24,6 +24,7 @@
 #include "debug/DebugStats.h"
 #include "profiler/FrameTimes.h"
 #include "script/LuaBinding.h"
+#include "support/EditorTestSupport.h"
 #include "util/FunctionSubscribe.h"
 
 #include "lua.hpp"
@@ -40,17 +41,6 @@
 #include <vector>
 
 using namespace jasperengine;
-
-#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
-    #define JE_LOG_TEST_SANITIZED 1
-#elif defined(__has_feature)
-    #if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer)
-        #define JE_LOG_TEST_SANITIZED 1
-    #endif
-#endif
-#ifndef JE_LOG_TEST_SANITIZED
-    #define JE_LOG_TEST_SANITIZED 0
-#endif
 
 namespace {
 
@@ -717,8 +707,12 @@ TEST_F(LogListenerTest, CostsNothingWhenOff) {
     for (int i = 0; i < 10000; i++)
         printDistinct("line of the cost test", i);
     const double lineUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - lineStart).count() / 10000.0;
-    if (!JE_LOG_TEST_SANITIZED) {
-        EXPECT_LT(lineUs, 5.0) << lineUs << " us per line";
+    // wall-clock budgets: printed always, enforced where perfSlack() asks for them (the benchmark
+    // run, never under the sanitizers)
+    std::printf("[bench] a line with the overlay off: %.3f us (budget 5)\n", lineUs);
+    const double slack = editor::test::perfSlack();
+    if (slack > 0.0) {
+        EXPECT_LT(lineUs, 5.0 * slack) << lineUs << " us per line";
     }
 
     // what a frame and its input cost the overlay: the frame-time ring, the update check, the hooks
@@ -735,8 +729,9 @@ TEST_F(LogListenerTest, CostsNothingWhenOff) {
         DebugOverlay::handleTouch(2, 10.0f, 10.0f, 2);
     }
     const double frameMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart).count() / 1000.0;
-    if (!JE_LOG_TEST_SANITIZED) {
-        EXPECT_LT(frameMs, 0.01) << frameMs << " ms per frame";
+    std::printf("[bench] a frame with the overlay off: %.4f ms (budget 0.01)\n", frameMs);
+    if (slack > 0.0) {
+        EXPECT_LT(frameMs, 0.01 * slack) << frameMs << " ms per frame";
     }
     EXPECT_FALSE(DebugOverlay::isConsoleVisible());
     EXPECT_EQ(DebugOverlay::getScene(), nullptr);
