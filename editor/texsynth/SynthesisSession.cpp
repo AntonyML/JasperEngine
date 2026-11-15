@@ -232,7 +232,9 @@ namespace jasperengine::editor::texsynth {
         for (const auto& entry : fs::directory_iterator(example.parent_path(), ec)) {
             if (!entry.is_regular_file(ec)) continue;
             const fs::path path = entry.path();
-            if (path.filename() == example.filename() || !Util::isImageFile(FileUtils::pathToUtf8(path.filename()))) continue;
+            // the extension alone: Util's check makes a fs::path of the text, which throws on Windows
+            // for a name that is not UTF-8
+            if (path.filename() == example.filename() || !Util::isImageFile(FileUtils::pathToUtf8(path.extension()))) continue;
             if (lower(FileUtils::pathToUtf8(path.extension())) == ".svg") continue;
             siblings.push_back(path);
         }
