@@ -159,7 +159,7 @@ async def test_analysis_measures_the_clip_as_it_plays(ed: Editor):
     ed.check_eq(r["items"][0]["analysis"]["momentary_max"], item["loudness"]["momentary_max"], "the reply's fresh analysis")
     cache = ed.project / ".jasperengine/cache/audio"
     # (earlier tests here measured the same bytes with other settings)
-    played = [yaml.safe_load(p.read_text())["played"]["frames"] for p in cache.glob(f"{item['sha1']}-i*-v2.json")]
+    played = [yaml.safe_load(p.read_text())["played"]["frames"] for p in cache.glob(f"{item['sha1']}-i*-v1.json")]
     ed.check_in(item["played"]["frames"], played, "its own cache file")
 
     # a wrap: whole cycles of the 1 kHz tone have a small seam, a wrap off the cycle a large one

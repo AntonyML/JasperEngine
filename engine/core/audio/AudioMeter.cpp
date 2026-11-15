@@ -3,8 +3,6 @@
 
 #include "AudioMeter.h"
 
-#include "math/PortableMath.h"
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -41,16 +39,16 @@ static double floorDb(double db){
 }
 
 static double amplitudeDb(double amplitude){
-    return amplitude > 0.0 ? floorDb(20.0 * portablemath::log10(amplitude)) : AudioMeter::SILENCE_DB;
+    return amplitude > 0.0 ? floorDb(20.0 * std::log10(amplitude)) : AudioMeter::SILENCE_DB;
 }
 
 static double meanSquareDb(double meanSquare){
-    return meanSquare > 0.0 ? floorDb(10.0 * portablemath::log10(meanSquare) + AES17_OFFSET_DB) : AudioMeter::SILENCE_DB;
+    return meanSquare > 0.0 ? floorDb(10.0 * std::log10(meanSquare) + AES17_OFFSET_DB) : AudioMeter::SILENCE_DB;
 }
 
 // BS.1770: L = -0.691 + 10 log10(sum of the channel-weighted mean squares); -inf for silence
 static double energyLoudness(double energy){
-    return energy > 0.0 ? -0.691 + 10.0 * portablemath::log10(energy) : -std::numeric_limits<double>::infinity();
+    return energy > 0.0 ? -0.691 + 10.0 * std::log10(energy) : -std::numeric_limits<double>::infinity();
 }
 
 // floor(a / b) for b > 0
@@ -62,8 +60,8 @@ static int64_t floorDivide(int64_t a, int64_t b){
 // RBJ cookbook sections, prewarped by the bilinear transform
 static void lowPassSection(double* c, double frequency, double q, double rate){
     double w = 2.0 * METER_PI * frequency / rate;
-    double cw = portablemath::cos(w);
-    double alpha = portablemath::sin(w) / (2.0 * q);
+    double cw = std::cos(w);
+    double alpha = std::sin(w) / (2.0 * q);
     double a0 = 1.0 + alpha;
     c[0] = (1.0 - cw) / 2.0 / a0;
     c[1] = (1.0 - cw) / a0;
@@ -74,8 +72,8 @@ static void lowPassSection(double* c, double frequency, double q, double rate){
 
 static void highPassSection(double* c, double frequency, double q, double rate){
     double w = 2.0 * METER_PI * frequency / rate;
-    double cw = portablemath::cos(w);
-    double alpha = portablemath::sin(w) / (2.0 * q);
+    double cw = std::cos(w);
+    double alpha = std::sin(w) / (2.0 * q);
     double a0 = 1.0 + alpha;
     c[0] = (1.0 + cw) / 2.0 / a0;
     c[1] = -(1.0 + cw) / a0;
@@ -248,7 +246,7 @@ void AudioSpectrumBands::init(unsigned int rate, unsigned int channelCount){
     windows = 0;
     window.assign(size, 1.0f);
     for (size_t i = 0; i < overlap; i++) {
-        const float taper = (float)portablemath::sin(METER_PI * ((double)i + 0.5) / (double)(2 * overlap));
+        const float taper = (float)std::sin(METER_PI * ((double)i + 0.5) / (double)(2 * overlap));
         window[i] = taper;
         window[size - 1 - i] = taper;
     }
@@ -256,8 +254,8 @@ void AudioSpectrumBands::init(unsigned int rate, unsigned int channelCount){
     twiddleIm.resize(size / 2);
     for (size_t i = 0; i < size / 2; i++) {
         const double angle = -2.0 * METER_PI * (double)i / (double)size;
-        twiddleRe[i] = (float)portablemath::cos(angle);
-        twiddleIm[i] = (float)portablemath::sin(angle);
+        twiddleRe[i] = (float)std::cos(angle);
+        twiddleIm[i] = (float)std::sin(angle);
     }
     re.resize(size);
     im.resize(size);
@@ -371,7 +369,7 @@ static double eighthPower(double x){
 
 void AudioSpectrumBands::energy(double out[BANDS + 1]) const{
     const double rate = (double)sampleRate;
-    const auto warped = [rate](double hz) { return portablemath::tan(METER_PI * hz / rate); };
+    const auto warped = [rate](double hz) { return std::tan(METER_PI * hz / rate); };
     const auto bandEnergy = [&](double low, double high) {
         // as AudioOctaveBank::initBand: empty from the limit, no low-pass from it. 4th-order Butterworth
         // edges through the bilinear transform, the magnitudes of its biquads.
@@ -411,9 +409,9 @@ void AudioMeter::kWeighting(unsigned int sampleRate, double shelf[5], double hig
     double f0 = 1681.974450955533;
     double gain = 3.999843853973347;
     double q = 0.7071752369554196;
-    double k = portablemath::tan(METER_PI * f0 / rate);
-    double vh = portablemath::pow(10.0, gain / 20.0);
-    double vb = portablemath::pow(vh, 0.4996667741545416);
+    double k = std::tan(METER_PI * f0 / rate);
+    double vh = std::pow(10.0, gain / 20.0);
+    double vb = std::pow(vh, 0.4996667741545416);
     double a0 = 1.0 + k / q + k * k;
     shelf[0] = (vh + vb * k / q + k * k) / a0;
     shelf[1] = 2.0 * (k * k - vh) / a0;
@@ -423,7 +421,7 @@ void AudioMeter::kWeighting(unsigned int sampleRate, double shelf[5], double hig
 
     f0 = 38.13547087602444;
     q = 0.5003270373238773;
-    k = portablemath::tan(METER_PI * f0 / rate);
+    k = std::tan(METER_PI * f0 / rate);
     a0 = 1.0 + k / q + k * k;
     highPass[0] = 1.0;
     highPass[1] = -2.0;
@@ -433,7 +431,7 @@ void AudioMeter::kWeighting(unsigned int sampleRate, double shelf[5], double hig
 }
 
 double AudioMeter::bandCentre(int band){
-    return 1000.0 * portablemath::pow(2.0, band - 5);
+    return 1000.0 * std::pow(2.0, band - 5);
 }
 
 const char* AudioMeter::bandLabel(int band){

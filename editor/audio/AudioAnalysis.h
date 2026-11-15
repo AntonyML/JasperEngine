@@ -26,7 +26,7 @@ namespace jasperengine::editor {
         using Json = nlohmann::json;
 
         // Bump whenever any value changes for the same input: the cache file names carry it.
-        static constexpr int VERSION = 2;
+        static constexpr int VERSION = 1;
         // Files larger than this are refused (an hour of 48 kHz stereo float WAV is about 1.4 GB)
         static constexpr uint64_t MAX_FILE_BYTES = 512ull * 1024 * 1024;
         // Files that decode to more samples (all channels) than this are refused before they are

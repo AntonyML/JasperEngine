@@ -796,9 +796,8 @@ set_source_files_properties(${JASPERENGINE_SPRITENORMALS_NO_FMA_SOURCES} PROPERT
 set_source_files_properties(${EDITOR_DIR}/model/ModelCooker.cpp ${EDITOR_DIR}/model/GltfDocument.cpp
     PROPERTIES COMPILE_OPTIONS "${JASPERENGINE_NO_FMA_FLAGS}")
 # The audio analysis (S36, S39's tempo grid): the committed library analysis.json and every agent's
-# numbers are the same on every CPU (arm64 Clang fuses a multiply and an add by default) and with
-# every C library (its sin, log10 and pow through math/PortableMath.h); the decoders and AudioMeter
-# it reads get the same in engine/CMakeLists.txt
+# numbers are the same on every CPU (arm64 Clang fuses a multiply and an add by default); the
+# decoders and AudioMeter it reads get the same in engine/CMakeLists.txt
 set_source_files_properties(${EDITOR_DIR}/audio/AudioAnalysis.cpp ${EDITOR_DIR}/audio/AudioMusicGrid.cpp
     PROPERTIES COMPILE_OPTIONS "${JASPERENGINE_NO_FMA_FLAGS}")
 

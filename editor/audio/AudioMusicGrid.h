@@ -26,7 +26,7 @@ namespace jasperengine::editor {
         using Json = nlohmann::json;
 
         // Bump whenever any value changes for the same bytes: the cache file names carry it
-        static constexpr int GRID_VERSION = 2;
+        static constexpr int GRID_VERSION = 1;
 
         // One way to lay the grid: beat 1 at firstBeatMs, a beat every 60 / bpm s
         struct Candidate {

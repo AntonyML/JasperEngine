@@ -9,10 +9,9 @@
 namespace jasperengine::portablemath {
 
     // Elementary functions that give the same bits with every C library, for results the engine
-    // promises are the same on every platform (the sound library's committed analysis, the pixel
-    // rotation goldens): MSVC's CRT and glibc round sin, cos, log10, hypot and the others
-    // differently in the last bit, on 0.1% to 20% of the inputs, and a value rounded near a step
-    // (a 0.01 dB field, a pixel at a boundary) then reads differently. Only +, -, *, /, sqrt,
+    // promises are the same on every platform (the pixel rotation's goldens): MSVC's CRT and glibc
+    // round sin, cos, log10, hypot and the others differently in the last bit, on 0.1% to 20% of
+    // the inputs, and a value that decides at a step (a pixel at a boundary) then reads differently. Only +, -, *, /, sqrt,
     // floor, frexp, ldexp and comparisons run here, which IEEE 754 defines exactly, in a fixed
     // order. A source using these must be built without contraction of a * b + c into a fused
     // multiply-add (JASPERENGINE_NO_FMA_FLAGS), or a compiler could fuse the polynomials on one
