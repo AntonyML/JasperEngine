@@ -451,81 +451,12 @@ public:
     // UTF-8 to UTF-16 as the standard conversion does, except that it never throws: a byte that is
     // not part of valid UTF-8 (a Latin-1 name from a recipe or an archive) travels as the lone
     // surrogate U+DC80 + byte, and utf8FromWide gives the byte back (Python's surrogateescape), so
-    // such a name round-trips and still reads as not UTF-8 where it is checked, as on POSIX. A
-    // surrogate's three-byte form (WTF-8) decodes to that surrogate.
-    static std::wstring wideFromUtf8(std::string_view text) {
-        std::wstring out;
-        out.reserve(text.size());
-        size_t i = 0;
-        while (i < text.size()) {
-            const unsigned char b0 = static_cast<unsigned char>(text[i]);
-            size_t length = 0;
-            char32_t point = 0, least = 0;
-            if (b0 < 0x80) {
-                out.push_back(static_cast<wchar_t>(b0));
-                i++;
-                continue;
-            } else if (b0 >= 0xC2 && b0 <= 0xDF) {
-                length = 2; point = b0 & 0x1F; least = 0x80;
-            } else if (b0 >= 0xE0 && b0 <= 0xEF) {
-                length = 3; point = b0 & 0x0F; least = 0x800;
-            } else if (b0 >= 0xF0 && b0 <= 0xF4) {
-                length = 4; point = b0 & 0x07; least = 0x10000;
-            }
-            bool valid = length > 0 && i + length <= text.size();
-            for (size_t k = 1; valid && k < length; k++) {
-                const unsigned char b = static_cast<unsigned char>(text[i + k]);
-                valid = (b & 0xC0) == 0x80;
-                point = (point << 6) | (b & 0x3F);
-            }
-            if (!valid || point < least || point > 0x10FFFF) {
-                out.push_back(static_cast<wchar_t>(0xDC00 + b0));
-                i++;
-                continue;
-            }
-            if (point >= 0x10000) {
-                out.push_back(static_cast<wchar_t>(0xD800 + ((point - 0x10000) >> 10)));
-                out.push_back(static_cast<wchar_t>(0xDC00 + ((point - 0x10000) & 0x3FF)));
-            } else {
-                out.push_back(static_cast<wchar_t>(point));
-            }
-            i += length;
-        }
-        return out;
-    }
-
+    // such a name round-trips and still reads as not UTF-8 where it is checked, as on POSIX. A lone
+    // surrogate's three-byte form (WTF-8, what utf8FromWide makes of one) decodes to it.
+    static std::wstring wideFromUtf8(std::string_view text);
     // UTF-16 to UTF-8, never throwing: a lone surrogate (NTFS allows them) of U+DC80 to U+DCFF is
     // the byte it stands for (wideFromUtf8), any other its three-byte form
-    static std::string utf8FromWide(std::wstring_view text) {
-        std::string out;
-        out.reserve(text.size());
-        for (size_t i = 0; i < text.size(); i++) {
-            char32_t point = static_cast<char32_t>(text[i]);
-            if (point >= 0xD800 && point <= 0xDBFF && i + 1 < text.size() && text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF) {
-                point = 0x10000 + ((point - 0xD800) << 10) + (static_cast<char32_t>(text[i + 1]) - 0xDC00);
-                i++;
-            } else if (point >= 0xDC80 && point <= 0xDCFF) {
-                out.push_back(static_cast<char>(point - 0xDC00));
-                continue;
-            }
-            if (point < 0x80) {
-                out.push_back(static_cast<char>(point));
-            } else if (point < 0x800) {
-                out.push_back(static_cast<char>(0xC0 | (point >> 6)));
-                out.push_back(static_cast<char>(0x80 | (point & 0x3F)));
-            } else if (point < 0x10000) {
-                out.push_back(static_cast<char>(0xE0 | (point >> 12)));
-                out.push_back(static_cast<char>(0x80 | ((point >> 6) & 0x3F)));
-                out.push_back(static_cast<char>(0x80 | (point & 0x3F)));
-            } else {
-                out.push_back(static_cast<char>(0xF0 | (point >> 18)));
-                out.push_back(static_cast<char>(0x80 | ((point >> 12) & 0x3F)));
-                out.push_back(static_cast<char>(0x80 | ((point >> 6) & 0x3F)));
-                out.push_back(static_cast<char>(0x80 | (point & 0x3F)));
-            }
-        }
-        return out;
-    }
+    static std::string utf8FromWide(std::wstring_view text);
 #endif
 
     // A project-relative path as project files store it: '/' between names on every platform,
