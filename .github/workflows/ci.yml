@@ -489,7 +489,11 @@ jobs:
     steps:
       - name: Start
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      # the tested commit's parents too: test_docs.py's title golden ledger compares the merge commit
+      # with its first parent, the base (tools/titleart/check_golden_ledger.py)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - uses: ./.github/actions/free-disk
       - uses: ./.github/actions/image
         with:
@@ -883,7 +887,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_macos == 'true'
     runs-on: macos-latest
-    timeout-minutes: 180
+    # cold (no ccache yet): editor 81 min, engine and core tests 63, CPU tests 18, then compile-smoke
+    timeout-minutes: 300
     env:
       JASPER_CI_REPRO: tools/ci/macos.sh
     steps:
