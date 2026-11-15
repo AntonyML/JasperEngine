@@ -135,7 +135,7 @@ TEST(AudioMusicGrid, CacheRoundTripIsTheSameGrid) {
     ASSERT_TRUE(AudioMusicGrid::get(file, cache, first, error)) << error;
     ASSERT_EQ(first.sha1.size(), 40u);
     const fs::path cached = AudioMusicGrid::cacheFile(cache, first.sha1);
-    EXPECT_EQ(cached.filename().string(), first.sha1 + "-grid-v1.json");
+    EXPECT_EQ(cached.filename().string(), first.sha1 + "-grid-v" + std::to_string(AudioMusicGrid::GRID_VERSION) + ".json");
     ASSERT_TRUE(fs::exists(cached));
     const std::string bytes = readText(cached);
     ASSERT_TRUE(AudioMusicGrid::get(file, cache, second, error)) << error;

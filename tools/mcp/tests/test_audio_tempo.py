@@ -55,7 +55,7 @@ async def test_fix_writes_the_block_and_then_agrees(ed: Editor):
     ed.check_eq(m["agrees"], False, "nothing to agree with")
     ed.check_eq(m["fix"], {"music": {"bpm": m["bpm"], "beats_per_bar": 4, "first_beat_ms": m["first_beat_ms"]}}, "fix is the settings to pass")
     ed.check_eq(meta.read_text(), before, "analyze_audio writes no .meta")
-    grids = list((ed.project / ".jasperengine" / "cache" / "audio").glob("*-grid-v1.json"))
+    grids = list((ed.project / ".jasperengine" / "cache" / "audio").glob("*-grid-v2.json"))
     ed.check_eq(len(grids), 1, f"one cached grid: {grids}")
 
     s = await ed.call("set_audio_import_settings", paths=[LOOP], settings=m["fix"])
@@ -64,7 +64,7 @@ async def test_fix_writes_the_block_and_then_agrees(ed: Editor):
     again = (await ed.call("analyze_audio", paths=[LOOP], image="none"))["items"][0]["music"]
     ed.check_eq(again["current"], m["fix"]["music"], "current reads the block")
     ed.check_eq(again["agrees"], True, "the block agrees with the detection")
-    ed.check_eq(len(list((ed.project / ".jasperengine" / "cache" / "audio").glob("*-grid-v1.json"))), 1, "the same bytes, the same grid")
+    ed.check_eq(len(list((ed.project / ".jasperengine" / "cache" / "audio").glob("*-grid-v2.json"))), 1, "the same bytes, the same grid")
 
     await ed.call("undo", scope="project")
     ed.check_eq(music_block(ed, LOOP), None, "one undo step removes it")
