@@ -266,9 +266,14 @@ TEST(SpriteNormalsSession, ResolveProjectFile) {
     EXPECT_NE(error.find("absolute"), std::string::npos) << error;
     EXPECT_FALSE(sn::resolveProjectFile(root(), ".jasperengine/hero.png", abs, error));
     EXPECT_NE(error.find("hidden"), std::string::npos) << error;
-    // outside a project: as given
-    EXPECT_TRUE(sn::resolveProjectFile(fs::path(), "/tmp/x/hero.png", abs, error));
-    EXPECT_EQ(abs, fs::path("/tmp/x/hero.png"));
+    // outside a project: as given (an absolute path has a drive on Windows)
+#ifdef _WIN32
+    const std::string given = "C:/tmp/x/hero.png";
+#else
+    const std::string given = "/tmp/x/hero.png";
+#endif
+    EXPECT_TRUE(sn::resolveProjectFile(fs::path(), given, abs, error));
+    EXPECT_EQ(abs, fs::path(given).lexically_normal());
 }
 
 // ---- checkSpec
