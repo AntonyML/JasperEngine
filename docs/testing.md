@@ -53,7 +53,19 @@ GRAPHIC_BACKEND=vulkan UNIT_SUITE=core tools/build.sh unit-tests   # GPU suites 
 GRAPHIC_BACKEND=gles3 UNIT_SUITE=core tools/build.sh unit-tests    # GPU suites in an OpenGL ES 3.2 context (llvmpipe, linux-backends image)
 WERROR=1 tools/build.sh unit-tests
 RUN=0 tools/build.sh unit-tests                             # build only
+UNIT_SHARD=1/2 UNIT_SUITE=editor tools/build.sh unit-tests  # shard 1 of 2 of the selected tests
+UNIT_BUILD_PART=1/2 UNIT_SUITE=editor tools/build.sh unit-tests  # compile part 1 of 2 of the objects, then stop
 ```
+
+`UNIT_SHARD=K/N` runs whole suites, balanced by test count, out of what the filter selects (the filter
+minus the other shards' suites; single tests when there are fewer suites than shards, all of them in
+every shard when there are fewer tests), so no shard runs nothing; an unfiltered shard must reach its
+share of the counts above. `UNIT_BUILD_PART=K/N` compiles every Nth object of the binary's compile
+steps (`ninja -t commands`, sorted), the same part in every tree of one configure, through
+`unit-part.ninja`: `build.ninja` without the libraries and executables CMake makes compiles and code
+generators wait for (order-only), so a part links nothing. CI's editor parts share them through ccache
+(below, "CI"). Both are `tools/ci/unit_split.py`
+(`python3 -I tools/ci/test_unit_split.py`).
 
 The binaries also register with CTest (`ctest --preset linux-ci` in an IDE build), labelled
 `unit`, `gpu` and `slow` by suite name.
@@ -924,7 +936,7 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `changes` | `tools/ci/plan_lanes.py`: `tools/check-changed`'s plan for the diff, widened by CI's rules below; uploads it as the artifact `plan` |
 | `lint` | the repository's and the workflows' lints |
 | `linux` | `WERROR=1 tools/build.sh linux`; its editor install feeds `mcp` and `smoke` |
-| `unit` (one job per test binary: `core`, `editor`) | `UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>' WERROR=1 tools/build.sh unit-tests`, plus the scalar picking rerun (core) |
+| `unit` (one job per test binary: `core`; `editor-1`, `editor-2`) | `UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>' WERROR=1 tools/build.sh unit-tests`, plus the scalar picking rerun (core); each editor part with `UNIT_SHARD=<k>/2`, after compiling half the objects (`UNIT_BUILD_PART=<k>/2`) and taking the other half from the other part (below) |
 | `asan` | `SANITIZE=address,undefined tools/build.sh unit-tests` |
 | `htmlui` | `JASPER_HTMLUI_PERF_SLACK=3 tools/build.sh htmlui-tests` |
 | `mcp` (one job per shard) | `tools/ci/mcp_shard.sh <k> build/ci-plan`: the CI suite's planned files, `-j 2`, without the fixture project |
@@ -937,8 +949,19 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `check` | the one required status, `Check` (`tools/ci/check_gate.py`): green only when every lane that had to run passed |
 
 `Check` treats a skipped lane as passed only when `changes` said the lane was not needed. A test lane
-that ran no test, an MCP shard that ran no file, or a merge-queue or full run that skipped a lane
-turns it red. A skipped MCP test fails its shard unless `tools/ci/mcp-allowed-skips.txt` lists it
+that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) without a
+report or that ran no test, or a merge-queue or full run that skipped a lane turns it red.
+
+**The editor parts.** The editor tests' build is most of their lane (runs 43737549764 and 43773511699:
+the build 110 and 137 min, the 5,268 tests 7 min). Each part (`tools/ci/plan_lanes.py` `UNIT_PARTS`)
+compiles every other object into the restored ccache, uploads the files that added
+(`unit-editor-<k>-ccache`, a day), and waits for the other part's (`tools/ci/unit_split.py wait`): no
+longer than its own part took, not at all when that part has not started or ended without them, or
+when its own part compiled under a tenth of its objects (a warm cache: the other part's hit too). It
+then builds the binary from the cache, compiling whatever it did not get, and runs its shard. Only
+the first part saves the `unit-editor` cache and the deps dump on push; the second only compiles its
+objects there. The hits need a configure whose objects do not depend on a precompiled header built in
+the job: a GCC `.gch` is not the same bytes twice, so a unit built on the other part's misses. A skipped MCP test fails its shard unless `tools/ci/mcp-allowed-skips.txt` lists it
 with the reason and the lane where it does run; a new entry is reviewed like any change.
 PR and merge-queue shards run without `JASPER_SLOW_BUILD`: the tests that build a real game (an hour
 or more each, cold) skip there and run in the nightly, and the smoke lane builds and launches games
@@ -1049,13 +1072,16 @@ in the editor leg; under ASan the `*GpuSlow` suites took 135 of 167 test minutes
 nightly job); an MCP shard of about 330 tests took 24 to 86 min without the game builds, and four
 game-building tests took 18 to 91 min each, cold.
 
-### Pins
+`unit (editor)` in one job, ccache restored but missing (2026-11-15/16): run 43737549764 123 min (setup
+4, build 110, all 5,268 tests 7), run 43773511699 141 min (setup 4, build 137, 39 tests 5 s). The tests
+spread evenly (the longest 31 s), so only splitting the build halves the lane: two parts, about
+65 min each cold (setup, half the build, the merge and links, half the tests), and about the one job's
+time warm.
 
-Third-party notices are credits, not a gate: `tools/ci/check-notices.py` stages whatever licence
-files and `NOTICE.md` rows exist into the editor install and exported games; CI does not fail on a
-library without them.
-
-The Chrome for Testing headless shell in `docker/web.Dockerfile`, and `uv` and Kitware's CMake in
+The ASan lane (`-*GpuSlow*`): CI's core runs stopped at 2,760 tests (`VoxelPhysics.BudgetPerTick`), so
+the rest is estimated from the non-ASan times (GPU tests 1.9 times slower under ASan, CPU tests 7.0,
+from the tests both measured): the core tests about 132 min, of which five GPU tests 37 min, now
+`*GpuSloitware's CMake in
 `docker/linux.Dockerfile`, are pinned by version and sha256 and bumped by hand, as are the MCP
 harness's packages (`tools/mcp/requirements.txt`). Every workflow action is pinned by its full commit
 SHA, with its version in a comment.

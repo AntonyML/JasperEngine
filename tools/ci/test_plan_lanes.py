@@ -175,14 +175,26 @@ class Rules(unittest.TestCase):
         lines = pl.github_output(doc, r["unit_run"]).splitlines()
         keys = [line.split("=", 1)[0] for line in lines]
         self.assertEqual(keys, ["full", *[f"run_{n}" for n in pl.LANES], "unit_filter_core", "unit_filter_editor",
-                                "unit_run_core", "unit_run_editor", "unit_suites", "htmlui_filter", "mcp_shards"])
+                                "unit_run_core", "unit_run_editor", "unit_jobs", "htmlui_filter", "mcp_shards"])
         self.assertIn("unit_filter_core=Foo.*:*/Foo.*:Foo/*.*", lines)
         self.assertIn('mcp_shards=["1","2"]', lines)
         self.assertIn("unit_run_editor=false", lines)
-        # the unit lane's matrix: one job per planned suite
-        self.assertIn('unit_suites=["core"]', lines)
+        # the unit lane's matrix: one job per planned test binary, the editor's in two
+        self.assertIn('unit_jobs=[{"job":"core","suite":"core","part":"","other":""}]', lines)
         doc["mcp"]["shards"] = []
         self.assertIn("mcp_shards=[]", pl.github_output(doc, r["unit_run"]).splitlines())
+        both = [line for line in pl.github_output(doc, {"core": True, "editor": True}).splitlines() if line.startswith("unit_jobs=")]
+        self.assertEqual(json.loads(both[0].split("=", 1)[1]), [
+            {"job": "core", "suite": "core", "part": "", "other": ""},
+            {"job": "editor-1", "suite": "editor", "part": "1/2", "other": "2"},
+            {"job": "editor-2", "suite": "editor", "part": "2/2", "other": "1"}])
+
+    def test_unit_jobs(self):
+        # the editor tests' build is most of their lane (CI runs 43737549764: 110 of 123 min), so two
+        # jobs each compile half of it; core stays one job
+        self.assertEqual(pl.unit_job_names({"core": True, "editor": True}), ["core", "editor-1", "editor-2"])
+        self.assertEqual(pl.unit_job_names({"core": False, "editor": True}), ["editor-1", "editor-2"])
+        self.assertEqual(pl.unit_job_names({"core": False, "editor": False}), [])
 
 
 TEST_FILE = """CI = True
@@ -318,6 +330,8 @@ class Runs(unittest.TestCase):
         self.assertEqual(doc["mcp"]["files"], [f"tools/mcp/tests/test_{n}.py" for n in ("a", "b", "slow")])
         self.assertTrue(doc["full"])
         self.assertEqual(doc["mcp"]["shards"], ["1"])
+        # what check_gate and the report expect a report from
+        self.assertEqual(doc["unit_jobs"], ["core", "editor-1", "editor-2"])
 
     def test_no_plan_fails_open_and_an_unlistable_suite_fails_the_lane(self):
         head = self.commit("engine/core/Foo.cpp", "int foo = 2;\n")

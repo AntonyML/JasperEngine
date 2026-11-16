@@ -71,7 +71,7 @@ jobs:
       run_ios: ${{ steps.plan.outputs.run_ios }}
       unit_run_core: ${{ steps.plan.outputs.unit_run_core }}
       unit_run_editor: ${{ steps.plan.outputs.unit_run_editor }}
-      unit_suites: ${{ steps.plan.outputs.unit_suites }}
+      unit_jobs: ${{ steps.plan.outputs.unit_jobs }}
       unit_filter_core: ${{ steps.plan.outputs.unit_filter_core }}
       unit_filter_editor: ${{ steps.plan.outputs.unit_filter_editor }}
       htmlui_filter: ${{ steps.plan.outputs.htmlui_filter }}
@@ -265,19 +265,27 @@ jobs:
           status: ${{ job.status }}
 
   # ----------------------------------------------------------------- Unit ---
-  # one job per test binary (core, editor), side by side: built cold, the two trees took 3.5 h in one job
+  # One job per test binary, side by side, the editor's in two parts (tools/ci/plan_lanes.py UNIT_PARTS):
+  # its build is most of its time (runs 43737549764 and 43773511699: 110 and 137 of 123 and 141 min).
+  # Each part compiles half the objects and uploads them as ccache files, takes the other part's
+  # (tools/ci/unit_split.py wait: it compiles them itself when that part has not started, failed or is
+  # slower), links, and runs half the suites. The first part (the lead) saves the cache on push.
   unit:
-    name: unit (${{ matrix.suite }})
+    name: unit (${{ matrix.job }})
     needs: changes
     if: needs.changes.outputs.run_unit == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    permissions:
+      contents: read
+      actions: read   # the parts look for each other's artifact and job (tools/ci/unit_split.py wait)
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(needs.changes.outputs.unit_suites) }}
+        include: ${{ fromJSON(needs.changes.outputs.unit_jobs) }}
     env:
-      JASPER_CI_REPRO: UNIT_SUITE=${{ matrix.suite }} WERROR=1 tools/build.sh unit-tests
+      JASPER_CI_REPRO: ${{ matrix.part && format('UNIT_SHARD={0} ', matrix.part) || '' }}UNIT_SUITE=${{ matrix.suite }} WERROR=1 tools/build.sh unit-tests
+      UNIT_LEAD: ${{ matrix.part == '' || startsWith(matrix.part, '1/') }}
     steps:
       - name: Start
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -297,15 +305,83 @@ jobs:
         if: github.event_name != 'push' && matrix.suite == 'core'
         run: tools/ci/logged.sh unit-presets 'tools/build.sh exec linux tools/ci/check-presets.sh'
 
-      # the planned suites with their filter ('' = all); a push builds the tree for the cache and the deps dumps
-      - name: jasperengine-${{ matrix.suite }}-tests
+      # a part: this part's objects, as the ccache files they added, for the other part. Only a speed-up:
+      # when it fails, the build below compiles what it lacks (and fails the job on a real error)
+      - name: Compile part ${{ matrix.part }} of the objects
+        if: matrix.part != ''
+        continue-on-error: true
         env:
           SUITE: ${{ matrix.suite }}
+          PART: ${{ matrix.part }}
+        run: |
+          echo "JASPER_PART_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+          python3 -I tools/ci/unit_split.py snapshot --ccache build/.cache/ccache --out "$RUNNER_TEMP/unit-part-before.json"
+          tools/ci/logged.sh "unit-$SUITE-part" "UNIT_BUILD_PART=$PART UNIT_SUITE=$SUITE WERROR=1 tools/build.sh unit-tests"
+      - name: Pack the part's objects
+        id: pack
+        if: ${{ !cancelled() && matrix.part != '' }}
+        continue-on-error: true
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: >-
+          python3 -I tools/ci/unit_split.py pack --ccache build/.cache/ccache --before "$RUNNER_TEMP/unit-part-before.json"
+          --out build/unit-part.tar --objects "build/linux/$SUITE-tests/unit-build-part.txt" --github-output "$GITHUB_OUTPUT"
+      # already zstd inside; the other part's job takes it within the run
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && matrix.part != '' }}
+        continue-on-error: true
+        with:
+          name: unit-${{ matrix.job }}-ccache
+          path: build/unit-part.tar
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+      - name: Wait for part ${{ matrix.other }}'s objects
+        id: other
+        if: ${{ !cancelled() && matrix.part != '' && (github.event_name != 'push' || env.UNIT_LEAD == 'true') }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: unit-${{ matrix.suite }}-${{ matrix.other }}-ccache
+          JOB: unit (${{ matrix.suite }}-${{ matrix.other }})
+          RESULTS: ${{ steps.pack.outputs.results }}
+          OBJECTS: ${{ steps.pack.outputs.objects }}
+        run: >-
+          python3 -I tools/ci/unit_split.py wait --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          --artifact "$ARTIFACT" --job "$JOB" --started "${JASPER_PART_STARTED:-0}" --results "${RESULTS:-0}" --objects "${OBJECTS:-0}"
+          --github-output "$GITHUB_OUTPUT"
+      # a failed download leaves the other part's objects to this job's build
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.other.outputs.found == 'true'
+        continue-on-error: true
+        with:
+          name: unit-${{ matrix.suite }}-${{ matrix.other }}-ccache
+          path: build/unit-other
+      # -m: extracted now, so ccache-save counts them as this run's
+      - name: Add part ${{ matrix.other }}'s objects to the cache
+        if: steps.other.outputs.found == 'true'
+        continue-on-error: true
+        run: |
+          if [[ -f build/unit-other/unit-part.tar ]]; then
+              tar -m -C build/.cache/ccache -xf build/unit-other/unit-part.tar && rm -rf build/unit-other
+          else
+              echo "no download: this job compiles part ${{ matrix.other }}'s objects"
+          fi
+
+      # the planned suites with their filter ('' = all), a part's shard of them; a push builds the tree
+      # for the cache and the deps dumps (its second part only compiles its objects for the first)
+      - name: jasperengine-${{ matrix.suite }}-tests
+        if: github.event_name != 'push' || env.UNIT_LEAD == 'true'
+        env:
+          SUITE: ${{ matrix.suite }}
+          SHARD: ${{ matrix.part }}
           FILTER: ${{ matrix.suite == 'core' && needs.changes.outputs.unit_filter_core || needs.changes.outputs.unit_filter_editor }}
           BUILD_ONLY: ${{ github.event_name == 'push' && 'RUN=0 ' || '' }}
         run: |
           args=""
           [[ -n "$FILTER" ]] && args="UNIT_TEST_ARGS=$(printf %q "--gtest_filter=$FILTER") "
+          [[ -n "$SHARD" ]] && args="UNIT_SHARD=$SHARD $args"
           tools/ci/logged.sh "unit-$SUITE" "${BUILD_ONLY}UNIT_SUITE=$SUITE ${args}WERROR=1 tools/build.sh unit-tests"
 
       # S26 AC2: the picking suites again on the scalar slab test (the run above took the CPU's AVX2);
@@ -323,30 +399,32 @@ jobs:
       - name: Warnings
         if: always()
         run: |
-          log="build/test-results/unit-${{ matrix.suite }}.log"
-          [[ -f "$log" ]] && python3 tools/ci/warning-summary.py "$log" >> "$GITHUB_STEP_SUMMARY"
+          for log in "build/test-results/unit-${{ matrix.suite }}-part.log" "build/test-results/unit-${{ matrix.suite }}.log"; do
+              [[ -f "$log" ]] && python3 tools/ci/warning-summary.py "$log" >> "$GITHUB_STEP_SUMMARY"
+          done
           true
 
       # plan inputs for PRs (tools/ci/plan_lanes.py --deps-from): the caches job saves them
       - name: Ninja deps dumps
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && env.UNIT_LEAD == 'true'
         run: tools/ci/logged.sh deps-dump 'tools/ci/dump_deps.sh build/ci-deps'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && env.UNIT_LEAD == 'true'
         with:
           name: deps-unit-${{ matrix.suite }}
           path: build/ci-deps/
           retention-days: 1
           if-no-files-found: error
 
+      # one entry per binary: the lead's build holds both parts' objects
       - uses: ./.github/actions/ccache-save
-        if: always()
+        if: always() && env.UNIT_LEAD == 'true'
         with:
           lane: unit-${{ matrix.suite }}
       - uses: ./.github/actions/report
         if: always()
         with:
-          lane: unit-${{ matrix.suite }}
+          lane: unit-${{ matrix.job }}
           status: ${{ job.status }}
 
   asan:
@@ -386,8 +464,8 @@ jobs:
               planned="RUN_${suite^^}"
               [[ "${!planned}" == true ]] || { echo "$suite: not planned"; continue; }
               filter="FILTER_${suite^^}"
-              # the *GpuSlow suites draw every node through llvmpipe: 135 of 167 test minutes under ASan; the
-              # unit lane runs them as they are and the nightly under ASan
+              # the *GpuSlow suites (docs/testing.md Naming: over 5 min a test under ASan) run in the nightly
+              # under ASan; the unit lane runs them as they are
               f="${!filter}"
               [[ -n "$f" ]] || f="*"
               if [[ "$f" == *-* ]]; then f="$f:*GpuSlow*"; else f="$f-*GpuSlow*"; fi

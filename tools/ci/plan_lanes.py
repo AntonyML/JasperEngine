@@ -57,6 +57,10 @@ SHARD_WORKERS = 2           # tools/ci/mcp_shard.sh runs -j 2 on a 4-vCPU runner
 MAX_PLANNED_SHARDS = 8      # a pull request's or the merge queue's MCP lane (CI design §16.2)
 MAX_SHARDS = 256            # a workflow's matrix limit: full and nightly take as many as they need
 FILTER_LIMIT = 60000        # a longer --gtest_filter runs everything instead (an argument's size)
+# the unit lane's jobs per test binary: the editor tests' build is most of their lane (110 of 123 min,
+# run 43737549764), so two jobs each compile half its objects, take the other's through the cache and
+# run half its suites (tools/ci/unit_split.py)
+UNIT_PARTS = {"core": 1, "editor": 2}
 # what a game's export and launch read (the smoke lane): check-changed's compile and saved-output
 # families, the engine, the templates and fixtures, the smoke scripts, and what builds everything
 SMOKE_PATHS = ("engine/*", *cc.COMPILE_PATHS, *cc.SAVED_OUTPUT_PATHS, "editor/resources/templates/*", "tools/fixtures/*",
@@ -332,14 +336,34 @@ def _decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_
 
 # ---------------------------------------------------------------------------------------- output
 
+def unit_jobs(unit_run: dict) -> list[dict]:
+    """The unit lane's matrix: a job per planned test binary, or per part of one (part K/N, other: the
+    part whose compiled objects it waits for; two parts only)."""
+    jobs = []
+    for suite in ("core", "editor"):
+        if not unit_run.get(suite):
+            continue
+        n = UNIT_PARTS[suite]
+        if n == 1:
+            jobs.append({"job": suite, "suite": suite, "part": "", "other": ""})
+            continue
+        for k in range(1, n + 1):
+            jobs.append({"job": f"{suite}-{k}", "suite": suite, "part": f"{k}/{n}", "other": str(3 - k) if n == 2 else ""})
+    return jobs
+
+
+def unit_job_names(unit_run: dict) -> list[str]:
+    return [j["job"] for j in unit_jobs(unit_run)]
+
+
 def github_output(doc: dict, unit_run: dict) -> str:
     lines = [f"full={'true' if doc['full'] else 'false'}"]
     lines += [f"run_{name}={'true' if entry['run'] else 'false'}" for name, entry in doc["lanes"].items()]
     lines += [f"unit_filter_core={doc['unit_filter']['core']}", f"unit_filter_editor={doc['unit_filter']['editor']}",
               f"unit_run_core={'true' if unit_run['core'] else 'false'}",
               f"unit_run_editor={'true' if unit_run['editor'] else 'false'}",
-              # the unit lane's matrix: one job per planned test binary, side by side
-              f"unit_suites={json.dumps([s for s in ('core', 'editor') if unit_run[s]], separators=(',', ':'))}",
+              # the unit lane's matrix: one job per planned test binary, the editor's in parts, side by side
+              f"unit_jobs={json.dumps(unit_jobs(unit_run), separators=(',', ':'))}",
               f"htmlui_filter={doc['htmlui_filter']}", f"mcp_shards={json.dumps(doc['mcp']['shards'], separators=(',', ':'))}"]
     return "\n".join(lines) + "\n"
 
@@ -399,7 +423,8 @@ def main(argv: list[str]) -> int:
                 result["fallbacks"].append(f"the MCP shards could not be planned ({why}): the mcp lane fails")
         doc = {"event": args.event, "full": args.event in ("full", "nightly"), "base": resolve(root, args.base) or args.base,
                "head": resolve(root, "HEAD") or args.head, "lanes": result["lanes"], "unit_filter": result["unit_filter"],
-               "unit_run": result["unit_run"], "htmlui_filter": result["htmlui_filter"],
+               "unit_run": result["unit_run"], "unit_jobs": unit_job_names(result["unit_run"]),
+               "htmlui_filter": result["htmlui_filter"],
                "mcp": dict(result["mcp"], shards=shards), "fallbacks": result["fallbacks"], "notes": notes,
                "files": plan["files"] if plan else None,
                "self_tests": plan["self_tests"] if plan else [],

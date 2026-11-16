@@ -42,7 +42,10 @@
 # instead of building docker/<target>.Dockerfile (CI pulls ghcr.io/<owner>/jasperengine-<target>-build:
 # <image-tag> and passes it, .github/actions/image).
 # unit-tests: UNIT_TEST_ARGS goes to both test binaries (e.g. --gtest_filter=Vector3.*), RUN=0
-# builds only, UNIT_SUITE=core or editor builds and runs one of the two; JASPER_TEST_UPDATE_GOLDEN=1
+# builds only, UNIT_SUITE=core or editor builds and runs one of the two; UNIT_SHARD=K/N runs shard K
+# of N of the tests UNIT_TEST_ARGS selects (whole suites, tools/ci/unit_split.py args);
+# UNIT_BUILD_PART=K/N compiles only part K of N of the test binary's objects and stops (CI's unit
+# jobs share their parts through ccache, tools/ci/unit_split.py objects); JASPER_TEST_UPDATE_GOLDEN=1
 # rewrites the core goldens (glcore only) and the reflection snapshot; JASPER_REFLECT_WRITE_FIXTURE=1
 # regenerates tools/fixtures/reflection-parity/AllComponents.scene (docs/specs/S08-reflection.md);
 # JASPER_BENCH_ENTITIES sets the reflection codec benchmark's scene size (ReflectCodecBench).
@@ -625,6 +628,19 @@ unit-tests)
     # a filtered run proves only that something ran; an unfiltered one has to reach AC7's counts
     CORE_MIN=$CORE_MIN_TESTS
     EDITOR_MIN=$EDITOR_MIN_TESTS
+    UNIT_SHARD="${UNIT_SHARD:-}"
+    UNIT_BUILD_PART="${UNIT_BUILD_PART:-}"
+    for part in "$UNIT_SHARD" "$UNIT_BUILD_PART"; do
+        [[ -z "$part" || "$part" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]] || { echo "UNIT_SHARD and UNIT_BUILD_PART are K/N, e.g. 1/2" >&2; exit 1; }
+    done
+    PART_NINJA_FLAGS="${JOBS:+-j $JOBS}"
+    [[ "${KEEP_GOING:-0}" == 1 ]] && PART_NINJA_FLAGS="$PART_NINJA_FLAGS -k 0"
+    # a shard of an unfiltered run has its share of AC7's counts
+    if [[ -n "$UNIT_SHARD" ]]; then
+        SHARDS="${UNIT_SHARD#*/}"
+        CORE_MIN=$(( (CORE_MIN + SHARDS - 1) / SHARDS ))
+        EDITOR_MIN=$(( (EDITOR_MIN + SHARDS - 1) / SHARDS ))
+    fi
     if [[ "${UNIT_TEST_ARGS:-}" == *--gtest_filter* ]]; then CORE_MIN=1; EDITOR_MIN=1; fi
     # (UNIT_SUITES=core|editor: the name S03's interim target used)
     UNIT_SUITE="${UNIT_SUITE:-${UNIT_SUITES:-all}}"
@@ -634,29 +650,50 @@ unit-tests)
     [[ "$UNIT_SUITE" != editor ]] && CORE=1
     [[ "$UNIT_SUITE" != core ]] && EDITOR=1
     run bash -euo pipefail -c "
+        # <tree> <target>: the target, or with UNIT_BUILD_PART only that part of its objects
+        build_tests() {
+            if [[ -n '$UNIT_BUILD_PART' ]]; then
+                python3 -I tools/ci/unit_split.py objects --build-dir \"\$1\" --target \"\$2\" --part '$UNIT_BUILD_PART' > \"\$1/unit-build-part.txt\"
+                ninja -C \"\$1\" -f unit-part.ninja $PART_NINJA_FLAGS \$(cat \"\$1/unit-build-part.txt\")
+            else
+                cmake --build \"\$1\" --target \"\$2\" $JOBS_FLAG
+            fi
+        }
+        # <binary>: the test arguments, with UNIT_SHARD narrowed to that shard's suites
+        test_args() {
+            if [[ -n '$UNIT_SHARD' ]]; then
+                python3 -I tools/ci/unit_split.py args --binary \"\$1\" --shard '$UNIT_SHARD' -- ${UNIT_TEST_ARGS:-}
+            else
+                echo '${UNIT_TEST_ARGS:-}'
+            fi
+        }
         if [[ $CORE == 1 ]]; then
             cmake --preset $CORE_PRESET -S engine -B $CORE_DIR -DCMAKE_BUILD_TYPE=$BT -DGRAPHIC_BACKEND=$LINUX_BACKEND \
                 $OPTION_FLAGS -DJASPERENGINE_WARNINGS=ON -DJASPERENGINE_WERROR=$WERROR_VALUE $DEV_ENGINE_FLAGS $CCACHE_FLAGS
-            cmake --build $CORE_DIR --target jasperengine-core-tests $JOBS_FLAG
+            build_tests $CORE_DIR jasperengine-core-tests
         fi
         if [[ $EDITOR == 1 ]]; then
             cmake --preset $EDITOR_PRESET -B $EDITOR_DIR -DCMAKE_BUILD_TYPE=$BT $OPTION_FLAGS \
                 -DJASPERENGINE_WERROR=$WERROR_VALUE $CCACHE_FLAGS
-            cmake --build $EDITOR_DIR --target jasperengine-editor-tests $JOBS_FLAG
+            build_tests $EDITOR_DIR jasperengine-editor-tests
         fi
-        [[ '${RUN:-1}' == 0 ]] && exit 0
+        [[ '${RUN:-1}' == 0 || -n '$UNIT_BUILD_PART' ]] && exit 0
         set -f  # a --gtest_filter pattern is not a glob
         status=0
         if [[ $CORE == 1 ]]; then
             rm -f $RESULTS/$CORE_RESULT.xml
-            env $VK_ENV tools/with-xvfb.sh $TEST_WRAP \
-                $CORE_DIR/tests/core/jasperengine-core-tests --gtest_output=xml:$RESULTS/$CORE_RESULT.xml ${UNIT_TEST_ARGS:-} || status=1
+            if args=\$(test_args $CORE_DIR/tests/core/jasperengine-core-tests); then
+                env $VK_ENV tools/with-xvfb.sh $TEST_WRAP \
+                    $CORE_DIR/tests/core/jasperengine-core-tests --gtest_output=xml:$RESULTS/$CORE_RESULT.xml \$args || status=1
+            fi
             $GTEST_GATE --xml $RESULTS/$CORE_RESULT.xml --min-tests $CORE_MIN --max-skipped 0 || status=1
         fi
         if [[ $EDITOR == 1 ]]; then
             rm -f $RESULTS/$EDITOR_RESULT.xml
-            tools/with-xvfb.sh $TEST_WRAP \
-                $EDITOR_DIR/jasperengine-editor-tests --gtest_output=xml:$RESULTS/$EDITOR_RESULT.xml ${UNIT_TEST_ARGS:-} || status=1
+            if args=\$(test_args $EDITOR_DIR/jasperengine-editor-tests); then
+                tools/with-xvfb.sh $TEST_WRAP \
+                    $EDITOR_DIR/jasperengine-editor-tests --gtest_output=xml:$RESULTS/$EDITOR_RESULT.xml \$args || status=1
+            fi
             $GTEST_GATE --xml $RESULTS/$EDITOR_RESULT.xml --min-tests $EDITOR_MIN --max-skipped 0 || status=1
         fi
         exit \$status
