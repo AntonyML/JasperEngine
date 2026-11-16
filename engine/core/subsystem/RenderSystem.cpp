@@ -10905,8 +10905,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 // (a World's block is wider and per draw item: drawTerrainWorldItems)
                 if (!terrain->world)
                     render.applyUniformBlock(mesh.submeshes[i].slotVSTerrain, sizeof(float) * 8, &(terrain->eyePos));
-                applyTerrainLayersUniform(render, mesh.submeshes[i].slotFSTerrainLayers, entity, *terrain, mesh.submeshes[i].litDefineBits,
-                                          (mesh.submeshes[i].litDefineBits & MaterialPbr::getDefineBit("TERRAIN_EXTENDED_LAYERS")) != 0);
+                applyTerrainLayersUniform(render, mesh.submeshes[i].slotFSTerrainLayers, entity, *terrain, mesh.submeshes[i].shader->shaderData);
                 applyTerrainMacroVertexUniform(render, mesh.submeshes[i].slotVSTerrainMacro, *terrain);
             }
 #if JASPERENGINE_VOXEL
@@ -12212,8 +12211,7 @@ void RenderSystem::drawMeshGBuffer(GBufferDraw& record, const float cameraFar, c
             terrain->eyePos = terrainNodes->nodesEyePos;
             if (!terrain->world)
                 gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferTerrain, sizeof(float) * 8, &(terrain->eyePos));
-            applyTerrainLayersUniform(gbufferRender, mesh.submeshes[i].slotFSGBufferTerrainLayers, entity, *terrain, 0,
-                                      (mesh.submeshes[i].gbufferShaderProperties & ShaderPool::getTerrainExtendedProperty()) != 0);
+            applyTerrainLayersUniform(gbufferRender, mesh.submeshes[i].slotFSGBufferTerrainLayers, entity, *terrain, mesh.submeshes[i].gbufferShader->shaderData);
             instanceCount = terrainNodes->nodesbuffer[i].getCount();
             gbufferRender.replaceVertexBuffer(terrain->views[0].nodesbuffer[i].getRender(), terrainNodes->nodesbuffer[i].getRender());
         }
