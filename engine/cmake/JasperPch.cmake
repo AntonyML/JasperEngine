@@ -51,6 +51,11 @@ function(jasperengine_target_pch target)
     endif()
     cmake_path(NORMAL_PATH header)
     target_precompile_headers(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${header}>")
+    # Clang stamps the header's mtime into the PCH and checks it, so ccache cannot reuse a PCH or a
+    # unit built on it in another tree (a fresh checkout): leave the stamp out
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-Xclang -fno-pch-timestamp>")
+    endif()
     # vendored C++ compiled inside the target keeps its own command line; and a source with
     # options of its own (-mavx2, -ffp-contract=off, -Os, ...) would not match the header's (GCC:
     # "created and used with differing settings"): checked once every directory is read, since
