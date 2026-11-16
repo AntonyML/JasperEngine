@@ -66,10 +66,10 @@ namespace changed_update_flags_test {
                     changed = *static_cast<double*>(oldProp.ref) != *static_cast<double*>(newProp.ref);
                     break;
                 case PropertyType::Int:
-                    changed = *static_cast<int*>(oldProp.ref) != *static_cast<int*>(newProp.ref);
-                    break;
                 case PropertyType::UInt:
-                    changed = *static_cast<unsigned int*>(oldProp.ref) != *static_cast<unsigned int*>(newProp.ref);
+                case PropertyType::Enum:
+                    // at the property's own width (an Enum may be one byte)
+                    changed = readPropertyInteger(oldProp, oldProp.ref) != readPropertyInteger(newProp, newProp.ref);
                     break;
                 case PropertyType::String:
                     changed = *static_cast<std::string*>(oldProp.ref) != *static_cast<std::string*>(newProp.ref);
@@ -97,9 +97,6 @@ namespace changed_update_flags_test {
                     break;
                 case PropertyType::Quat:
                     changed = *static_cast<Quaternion*>(oldProp.ref) != *static_cast<Quaternion*>(newProp.ref);
-                    break;
-                case PropertyType::Enum:
-                    changed = *static_cast<int*>(oldProp.ref) != *static_cast<int*>(newProp.ref);
                     break;
                 case PropertyType::Ease:
                     changed = *static_cast<Ease*>(oldProp.ref) != *static_cast<Ease*>(newProp.ref);
@@ -133,8 +130,8 @@ namespace changed_update_flags_test {
         return flags;
     }
 
-    // another value of a property (a Custom one always counts as changed; a byte, as an Enum may be
-    // narrower than the int it is compared as)
+    // another value of a property (a Custom one always counts as changed; an Enum's first byte, as
+    // it may be one byte wide)
     void changeValue(const PropertyData& property) {
         void* ref = property.ref;
         if (!ref) return;
