@@ -589,6 +589,9 @@ change: add it and rebuild. Test data goes in `engine/tests/core/fixtures/` or
   Run only the CPU suites where no device exists with `--gtest_filter=-*Gpu*`.
 - A suite whose tests take more than 5 s each ends in `Slow`. Any other test stays under 1 s, and
   both binaries' CPU suites together under 60 s on 4 cores.
+- A GPU test that takes more than 5 minutes under ASan goes in a suite ending in `GpuSlow` (a fixture
+  of its own, `class TitleGenGpuSlow : public TitleGenGpu {};`): the PR ASan lane leaves `*GpuSlow*` to
+  the nightly's ASan job, and every other lane runs it as a `*Gpu*` suite (`-*Gpu*` leaves it out too).
 - CTest labels follow the names: `gpu`, `slow`, else `unit`.
 - `ReflectParity.*` compares the reflection codec against frozen data
   (`editor/tests/reflect/parity_golden/`): a field added to a reflection table adds its key there,
@@ -1081,7 +1084,16 @@ time warm.
 The ASan lane (`-*GpuSlow*`): CI's core runs stopped at 2,760 tests (`VoxelPhysics.BudgetPerTick`), so
 the rest is estimated from the non-ASan times (GPU tests 1.9 times slower under ASan, CPU tests 7.0,
 from the tests both measured): the core tests about 132 min, of which five GPU tests 37 min, now
-`*GpuSloitware's CMake in
+`*GpuSlow` (a full local ASan run, a loaded host: 74 of 222 min); `VoxelSoakSlow.IncrementalEqualsRebuild`
+(about 10 min, CPU) stays. The editor tests under ASan: 62 min for the 4,308 a local run reached.
+
+### Pins
+
+Third-party notices are credits, not a gate: `tools/ci/check-notices.py` stages whatever licence
+files and `NOTICE.md` rows exist into the editor install and exported games; CI does not fail on a
+library without them.
+
+The Chrome for Testing headless shell in `docker/web.Dockerfile`, and `uv` and Kitware's CMake in
 `docker/linux.Dockerfile`, are pinned by version and sha256 and bumped by hand, as are the MCP
 harness's packages (`tools/mcp/requirements.txt`). Every workflow action is pinned by its full commit
 SHA, with its version in a comment.
