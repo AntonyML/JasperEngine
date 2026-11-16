@@ -48,11 +48,6 @@ fi
 LAUNCHERS=()
 if command -v ccache >/dev/null 2>&1; then
     LAUNCHERS=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
-    # the macOS editor tree's precompiled headers, as tools/build.sh in the Linux images (MSVC builds
-    # have none; no macOS unit uses __DATE__/__TIME__)
-    if [[ "$OSTYPE" == darwin* ]]; then
-        export CCACHE_SLOPPINESS="${CCACHE_SLOPPINESS:-pch_defines,time_macros}"
-    fi
 fi
 
 JOBS_ARGS=()

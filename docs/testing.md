@@ -880,12 +880,10 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   Android and players, which therefore check that every source includes what it uses. Not on MSVC
   (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator.
 - **ccache** needs `sloppiness = pch_defines,time_macros` to cache a unit that uses a precompiled
-  header; `tools/build.sh` sets it in the Linux images (no Linux unit uses `__DATE__`/`__TIME__`),
-  `tools/ci/platform-common.sh` on macOS, and Clang builds the header with `-fno-pch-timestamp`,
-  without which no other tree can reuse it. A fresh tree at the same path then hits every unit,
-  the precompiled headers' included (their build is cached too, so the `.gch` the units hash is
-  the same). In the Android image it names the compiler by `--version`: the NDK is unpacked in
-  each container, so its mtime changes every run.
+  header; `tools/build.sh` sets it in the Linux images (no Linux unit uses `__DATE__`/`__TIME__`).
+  A fresh tree at the same path then hits every unit, the precompiled headers' included (their
+  build is cached too, so the `.gch` the units hash is the same). In the Android image it names the
+  compiler by `--version`: the NDK is unpacked in each container, so its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
