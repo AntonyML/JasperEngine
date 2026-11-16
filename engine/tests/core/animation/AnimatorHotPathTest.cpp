@@ -27,7 +27,7 @@ namespace {
     constexpr float kHotPathDt = 1.0f / 60.0f;
 
     // a turn of `degrees` about x of `path` over 1 s, in steps of 0.1 s
-    ClipData turn(const std::string& path, float degrees){
+    ClipData animatorHotPathTurn(const std::string& path, float degrees){
         ClipData data;
         data.wrap = ClipWrapMode::Loop;
         ClipTrackData t;
@@ -61,10 +61,10 @@ namespace {
         // a base layer and an upper layer of `blending` with states A, B, C (each its own turn of
         // the spine); any state -> C when the parameter "Go" is set
         std::string layered(AnimatorLayerBlending blending = AnimatorLayerBlending::Override){
-            const std::string base = clip("base", turn("Hips", 30.0f));
-            const std::string a = clip("a", turn("Hips/Spine", 40.0f));
-            const std::string b = clip("b", turn("Hips/Spine", -50.0f));
-            const std::string c = clip("c", turn("Hips/Spine", 70.0f));
+            const std::string base = clip("base", animatorHotPathTurn("Hips", 30.0f));
+            const std::string a = clip("a", animatorHotPathTurn("Hips/Spine", 40.0f));
+            const std::string b = clip("b", animatorHotPathTurn("Hips/Spine", -50.0f));
+            const std::string c = clip("c", animatorHotPathTurn("Hips/Spine", 70.0f));
             ControllerDef def = controller({parameter("Go", AnimatorParameterType::Bool)}, {state("Base", base)});
             LayerDef upper;
             upper.name = "Upper";
@@ -216,7 +216,7 @@ TEST_F(AnimatorHotPath, SnapshotWithAWeightFadeInTheSameFrame){
 // R16: a preview shows its pose in the call, as without async loading (the editor's mode)
 TEST_F(AnimatorHotPath, PreviewLoadsAnAnimInTheCall){
     // large enough for the thread pool otherwise
-    animtest::writeAsset(prefix + "base.anim", anim::writeClip(turn("Hips", 30.0f)) + std::string(70000, ' '));
+    animtest::writeAsset(prefix + "base.anim", anim::writeClip(animatorHotPathTurn("Hips", 30.0f)) + std::string(70000, ' '));
     animator(controllerFile("preview", controller({}, {state("Base", prefix + "base.anim")})));
     const bool wasAsync = Engine::isAsyncLoading();
     Engine::setAsyncLoading(true);
@@ -231,8 +231,8 @@ TEST_F(AnimatorHotPath, PreviewLoadsAnAnimInTheCall){
 // AC7 (R16): a first use through the thread pool starts where one through the calling thread
 // does, even when one of its clips arrives later than another: time does not run without them
 TEST_F(AnimatorHotPath, ThreadPoolFirstUseMatchesTheCallingThread){
-    const std::string base = clip("base", turn("Hips", 30.0f));
-    ClipData late = turn("Hips/Spine", 40.0f);
+    const std::string base = clip("base", animatorHotPathTurn("Hips", 30.0f));
+    ClipData late = animatorHotPathTurn("Hips/Spine", 40.0f);
     late.events = {event(0.05f, "early")};
     // large enough to go through the thread pool
     animtest::writeAsset(prefix + "late.anim", anim::writeClip(late) + std::string(70000, ' '));

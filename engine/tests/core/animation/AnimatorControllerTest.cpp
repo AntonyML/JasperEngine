@@ -63,7 +63,7 @@ namespace {
         return data;
     }
 
-    ClipData still(float x, float length = 1.0f, ClipWrapMode wrap = ClipWrapMode::Loop){
+    ClipData animatorControllerStill(float x, float length = 1.0f, ClipWrapMode wrap = ClipWrapMode::Loop){
         ClipData data = legSlide(x, length, wrap);
         data.tracks[0].keys[0].value = {x, 0, 0};
         return data;
@@ -271,9 +271,9 @@ TEST(ControllerValidation, ReportsTheGranjeroPortsBugs){
 }
 
 TEST_F(Controllers, FixedDurationTransitionsBlendLinearly){
-    clip("idle", still(0));
-    clip("running", still(10));
-    clip("watering", still(5, 1.0f, ClipWrapMode::Once));
+    clip("idle", animatorControllerStill(0));
+    clip("running", animatorControllerStill(10));
+    clip("watering", animatorControllerStill(5, 1.0f, ClipWrapMode::Once));
     AnimationPlayer object = player(controller("granjero", GRANJERO));
     std::vector<std::string> log;
     object.getOnStateEnter().add("test", std::function<void(int, const std::string&)>([&](int layer, const std::string& name){
@@ -322,9 +322,9 @@ TEST_F(Controllers, FixedDurationTransitionsBlendLinearly){
 }
 
 TEST_F(Controllers, TriggersExitTimesAndAnyState){
-    clip("a", still(1));
-    clip("b", still(2));
-    clip("c", still(3));
+    clip("a", animatorControllerStill(1));
+    clip("b", animatorControllerStill(2));
+    clip("c", animatorControllerStill(3));
     AnimationPlayer object = player(controller("triggers", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "Go", "type": "trigger"}, {"name": "Hit", "type": "trigger"}],
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"}, {"name": "B", "clip": "@b.anim"}, {"name": "C", "clip": "@c.anim"}],
@@ -365,9 +365,9 @@ TEST_F(Controllers, TriggersExitTimesAndAnyState){
 }
 
 TEST_F(Controllers, NextStateInterruption){
-    clip("a", still(1));
-    clip("b", still(2));
-    clip("c", still(3));
+    clip("a", animatorControllerStill(1));
+    clip("b", animatorControllerStill(2));
+    clip("c", animatorControllerStill(3));
     AnimationPlayer object = player(controller("interrupt", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "Go", "type": "bool"}, {"name": "Skip", "type": "bool"}],
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"}, {"name": "B", "clip": "@b.anim"}, {"name": "C", "clip": "@c.anim"}],
@@ -447,8 +447,8 @@ TEST_F(Controllers, EventsFireFromTheHeaviestChildOnly){
 }
 
 TEST_F(Controllers, LayersAndPlayFromScript){
-    clip("idle", still(1));
-    clip("wave", still(7));
+    clip("idle", animatorControllerStill(1));
+    clip("wave", animatorControllerStill(7));
     AnimationPlayer object = player(controller("layers", R"({"format": "jasperengine.controller", "version": 1,
       "layers": [{"name": "Base Layer", "states": [{"name": "Idle", "clip": "@idle.anim"}, {"name": "Other", "clip": "@idle.anim"}]},
                  {"name": "Holding", "weight": 0.5, "states": [{"name": "Hold", "clip": "@wave.anim"}]}]})"));
@@ -495,9 +495,9 @@ TEST_F(Controllers, LayersAndPlayFromScript){
 }
 
 TEST_F(Controllers, LuaApiAndScriptMethods){
-    clip("idle", still(0));
-    clip("running", still(10));
-    clip("watering", still(5, 1.0f, ClipWrapMode::Once));
+    clip("idle", animatorControllerStill(0));
+    clip("running", animatorControllerStill(10));
+    clip("watering", animatorControllerStill(5, 1.0f, ClipWrapMode::Once));
     AnimationPlayer object = player(controller("granjero", GRANJERO));
     lua_State* L = LuaBinding::getLuaState();
     ASSERT_TRUE(L != nullptr);
@@ -550,13 +550,13 @@ TEST_F(Controllers, LuaApiAndScriptMethods){
 }
 
 TEST_F(Controllers, MissingClipsAreEmptyStatesAndControllersReload){
-    clip("idle", still(1));
+    clip("idle", animatorControllerStill(1));
     const std::string path = controller("reload", R"({"format": "jasperengine.controller", "version": 1,
       "layers": [{"name": "Base Layer", "states": [{"name": "Gone", "clip": "@missing.anim"}, {"name": "Idle", "clip": "@idle.anim"}]}]})");
     AnimationPlayer object = player(path);
     AnimationPlayerComponent& component = scene.getComponent<AnimationPlayerComponent>(root);
     AnimationPlayerClip legacy;
-    legacy.clip = clip("legacy", still(9));
+    legacy.clip = clip("legacy", animatorControllerStill(9));
     component.clips.push_back(legacy);
     component.needsLoad = true;
     step(0.1);
@@ -576,11 +576,11 @@ TEST_F(Controllers, MissingClipsAreEmptyStatesAndControllersReload){
 // start events fire when a state is entered through a transition, a trigger two layers read
 // fires on both, a state whose clip failed counts as empty (1 s) so exit times go on
 TEST_F(Controllers, ReentryStartEventsSharedTriggersAndFailedClips){
-    ClipData hit = still(4);
+    ClipData hit = animatorControllerStill(4);
     hit.events = {ClipEventData{0.0f, "onHit", {}}};
     clip("hit", hit);
-    clip("idle", still(1));
-    clip("upper", still(2));
+    clip("idle", animatorControllerStill(1));
+    clip("upper", animatorControllerStill(2));
     AnimationPlayer object = player(controller("reentry", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "Hit", "type": "trigger"}],
       "layers": [{"name": "Base Layer", "states": [{"name": "Idle", "clip": "@idle.anim"}, {"name": "Hit", "clip": "@hit.anim"},
@@ -617,8 +617,8 @@ TEST_F(Controllers, ReentryStartEventsSharedTriggersAndFailedClips){
 }
 
 TEST_F(Controllers, ReloadDuringATransitionKeepsItsDestination){
-    clip("a", still(1));
-    clip("b", still(2));
+    clip("a", animatorControllerStill(1));
+    clip("b", animatorControllerStill(2));
     const std::string text = R"({"format": "jasperengine.controller", "version": 1, "parameters": [{"name": "Go", "type": "bool"}],
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"}, {"name": "B", "clip": "@b.anim"}],
         "transitions": [{"from": "A", "to": "B", "conditions": [{"parameter": "Go", "mode": "if"}], "has_exit_time": false, "duration": 1}]}]})";
@@ -660,10 +660,10 @@ TEST(ControllerIO, ValidationDoesNotRepeatWarnings){
 // equals / not_equal, the callback order (clip events, onStateExit, onStateEnter), Model:playAnimation
 // through a controller, Lua-safe parameter names, playInLayer / crossFadeInLayer
 TEST_F(Controllers, OrderedInterruptionFromTheCurrentState){
-    clip("a", still(1));
-    clip("b", still(2));
-    clip("c", still(3));
-    clip("d", still(4));
+    clip("a", animatorControllerStill(1));
+    clip("b", animatorControllerStill(2));
+    clip("c", animatorControllerStill(3));
+    clip("d", animatorControllerStill(4));
     AnimationPlayer object = player(controller("ordered", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "GoB", "type": "bool"}, {"name": "GoC", "type": "bool"}, {"name": "GoD", "type": "bool"}],
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"}, {"name": "B", "clip": "@b.anim"},
@@ -685,7 +685,7 @@ TEST_F(Controllers, OrderedInterruptionFromTheCurrentState){
 }
 
 TEST_F(Controllers, DurationsOffsetsSpeedsAndIntConditions){
-    clip("a", still(1, 2.0f));
+    clip("a", animatorControllerStill(1, 2.0f));
     clip("b", legSlide(10, 1.0f));
     AnimationPlayer object = player(controller("timing", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "N", "type": "int"}, {"name": "Rate", "type": "float", "default": 2}],
@@ -726,10 +726,10 @@ TEST_F(Controllers, DurationsOffsetsSpeedsAndIntConditions){
 }
 
 TEST_F(Controllers, CallbacksFollowTheStepsClipEvents){
-    ClipData a = still(1, 1.0f);
+    ClipData a = animatorControllerStill(1, 1.0f);
     a.events = {ClipEventData{0.95f, "onLate", {}}};
     clip("a", a);
-    clip("b", still(2));
+    clip("b", animatorControllerStill(2));
     AnimationPlayer object = player(controller("order", R"({"format": "jasperengine.controller", "version": 1,
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"}, {"name": "B", "clip": "@b.anim"}],
         "transitions": [{"from": "A", "to": "B", "exit_time": 0.9, "duration": 0}]}]})"));
@@ -756,8 +756,8 @@ TEST_F(Controllers, ModelPlayAnimationAndLayerForms){
     scene.addComponent<ModelComponent>(root, {});
     scene.addComponent<MeshComponent>(root, {});
     scene.getComponent<ModelComponent>(root).needUpdateModel = false;
-    clip("a", still(1));
-    clip("b", still(2));
+    clip("a", animatorControllerStill(1));
+    clip("b", animatorControllerStill(2));
     AnimationPlayer object = player(controller("model", R"({"format": "jasperengine.controller", "version": 1,
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"}, {"name": "B", "clip": "@b.anim"}]}]})"));
     step(0.1);

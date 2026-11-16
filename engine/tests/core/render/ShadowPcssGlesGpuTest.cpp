@@ -63,13 +63,13 @@ namespace {
         return rgba;
     }
 
-    struct Difference {
+    struct ShadowPcssGlesDifference {
         int maxDiff = 0;
         size_t pixels = 0;   // pixels with a channel more than 8 apart
     };
 
-    Difference differenceOf(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
-        Difference out;
+    ShadowPcssGlesDifference shadowPcssGlesDifferenceOf(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
+        ShadowPcssGlesDifference out;
         if (a.size() != b.size()){
             out.maxDiff = 255;
             return out;
@@ -271,7 +271,7 @@ TEST_F(ShadowPcssGlesGpu, GlesProgramsDrawTheDesktopContactHardening){
     const uint16_t customId = floorSubmesh.customShaderId;
     ASSERT_NE(variant & ShaderPool::getDirectionalOnlyProperty(), 0u) << "a sun-only scene draws the 'Dlo' Lit";
     ASSERT_NE(variant & ShaderPool::getShadowsHQProperty(), 0u);
-    const Difference pcss = differenceOf(high, desktop);
+    const ShadowPcssGlesDifference pcss = shadowPcssGlesDifferenceOf(high, desktop);
     std::printf("[pcss-gles] Ultra against High (PCSS against the Vogel disk): max %d, %zu pixels\n", pcss.maxDiff, pcss.pixels);
     EXPECT_GT(pcss.pixels, 200u) << "Ultra draws the High tier's shadow: no PCSS on desktop to compare with";
 
@@ -332,8 +332,8 @@ TEST_F(ShadowPcssGlesGpu, GlesProgramsDrawTheDesktopContactHardening){
     keep(gles, "shadow_pcss_gles_ultra_gles3");
     std::printf("[pcss-gles] llvmpipe %ux%u, sun-only Lit 'Dlo': High (Vogel) %.2f ms, Ultra (PCSS) %.2f ms, Ultra with the GLES3 programs %.2f ms a frame\n",
                 GpuEnvironment::target().getWidth(), GpuEnvironment::target().getHeight(), highMs, desktopMs, glesMs);
-    const Difference fromDesktop = differenceOf(desktop, gles);
-    const Difference fromHigh = differenceOf(high, gles);
+    const ShadowPcssGlesDifference fromDesktop = shadowPcssGlesDifferenceOf(desktop, gles);
+    const ShadowPcssGlesDifference fromHigh = shadowPcssGlesDifferenceOf(high, gles);
     std::printf("[pcss-gles] GLES3 programs against desktop: max %d, %zu pixels; against High: max %d, %zu pixels\n",
                 fromDesktop.maxDiff, fromDesktop.pixels, fromHigh.maxDiff, fromHigh.pixels);
     EXPECT_LE(fromDesktop.maxDiff, 2) << "the GLES3 programs draw another shadow than desktop's (" << fromDesktop.pixels << " pixels)";
@@ -358,7 +358,7 @@ TEST_F(ShadowPcssGlesGpu, PaintedTerrainTakesContactHardening){
     EXPECT_TRUE(bindings.raw) << bindings.name << " has no PCSS";
     keep(high, "shadow_pcss_terrain_high");
     keep(ultra, "shadow_pcss_terrain_ultra");
-    const Difference pcss = differenceOf(high, ultra);
+    const ShadowPcssGlesDifference pcss = shadowPcssGlesDifferenceOf(high, ultra);
     std::printf("[pcss-gles] painted terrain, Ultra against High: max %d, %zu pixels\n", pcss.maxDiff, pcss.pixels);
     EXPECT_GT(pcss.pixels, 200u) << "the painted terrain draws the High tier's shadow at Ultra";
     EXPECT_NO_ENGINE_ERRORS();

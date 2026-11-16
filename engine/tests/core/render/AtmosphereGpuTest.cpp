@@ -45,7 +45,7 @@ namespace {
     // the spec's golden tolerance: mean difference 1/255, 99% of the pixels within 8/255. The
     // goldens are glcore's; another backend is held to AC11's cross-backend bound (mean 3/255),
     // with up to 5% of the pixels over 8/255 (the thin cloud edges near the horizon move)
-    CompareOptions goldenTolerance(){
+    CompareOptions atmosphereGoldenTolerance(){
         CompareOptions options;
         const bool goldenBackend = std::strcmp(HeadlessContext::getBackendName(), "glcore") == 0;
         options.pixelThreshold = 8;
@@ -77,7 +77,7 @@ namespace {
     }
 
     // Rec. 709 luminance of the mean colour of a w x h block at (x, y), rows top first
-    double luminance(const std::vector<uint8_t>& rgba, int x, int y, int w, int h){
+    double atmosphereLuminance(const std::vector<uint8_t>& rgba, int x, int y, int w, int h){
         const int width = (int)GpuEnvironment::target().getWidth();
         double r = 0.0, g = 0.0, b = 0.0;
         for (int j = y; j < y + h; j++){
@@ -229,7 +229,7 @@ TEST_F(AtmosphereGpu, HeightFogValley){
     camera.setTarget(0.0f, 4.0f, -100.0f);
     camera.setFarClip(3000.0f);
     ASSERT_TRUE(render());
-    EXPECT_GOLDEN_OPTIONS("atmosphere_valley", goldenTolerance());
+    EXPECT_GOLDEN_OPTIONS("atmosphere_valley", atmosphereGoldenTolerance());
     EXPECT_TRUE(info().heightFog);
     EXPECT_NO_ENGINE_ERRORS();
 }
@@ -256,7 +256,7 @@ TEST_F(AtmosphereGpu, HeightFogOrthographic){
     camera.setPosition(60.0f, 60.0f, 60.0f);
     camera.setTarget(0.0f, 10.0f, 0.0f);
     ASSERT_TRUE(render());
-    EXPECT_GOLDEN_OPTIONS("atmosphere_ortho_iso", goldenTolerance());
+    EXPECT_GOLDEN_OPTIONS("atmosphere_ortho_iso", atmosphereGoldenTolerance());
 
     // the fog varies with world height (not with the ortho depth): the tower's top keeps its
     // red, its foot takes the fog's white
@@ -317,7 +317,7 @@ TEST_F(AtmosphereGpu, HeightFogSkyColorModeFromACubemap){
     camera.setFarClip(3000.0f);
     ASSERT_TRUE(render());
     EXPECT_EQ(info().horizonSource, "cubemap");
-    EXPECT_GOLDEN_OPTIONS("atmosphere_sky_mode_cubemap", goldenTolerance());
+    EXPECT_GOLDEN_OPTIONS("atmosphere_sky_mode_cubemap", atmosphereGoldenTolerance());
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -426,18 +426,18 @@ TEST_F(AtmosphereGpu, LightShafts){
         shafts.fog.setLightShafts(true);
         ASSERT_TRUE(render());
         const std::vector<uint8_t> image = readAtmosphereTarget();
-        const double lit = luminance(image, litX - 4, litY - band / 2, 8, band);
-        const double shadowed = luminance(image, shadowX - 4, shadowY - band / 2, 8, band);
+        const double lit = atmosphereLuminance(image, litX - 4, litY - band / 2, 8, band);
+        const double shadowed = atmosphereLuminance(image, shadowX - 4, shadowY - band / 2, 8, band);
         std::printf("[atmosphere] shafts %s: lit %.1f shadowed %.1f\n", AtmosphereTiers::getName(quality), lit, shadowed);
         EXPECT_LE(shadowed, lit * 0.85) << AtmosphereTiers::getName(quality);
-        EXPECT_GOLDEN_OPTIONS(goldens[index++], goldenTolerance());
+        EXPECT_GOLDEN_OPTIONS(goldens[index++], atmosphereGoldenTolerance());
 
         // without light shafts the fog is lit everywhere
         shafts.fog.setLightShafts(false);
         ASSERT_TRUE(render());
         const std::vector<uint8_t> flat = readAtmosphereTarget();
-        const double litFlat = luminance(flat, litX - 4, litY - band / 2, 8, band);
-        const double shadowedFlat = luminance(flat, shadowX - 4, shadowY - band / 2, 8, band);
+        const double litFlat = atmosphereLuminance(flat, litX - 4, litY - band / 2, 8, band);
+        const double shadowedFlat = atmosphereLuminance(flat, shadowX - 4, shadowY - band / 2, 8, band);
         std::printf("[atmosphere] shafts off %s: lit %.1f shadowed %.1f\n", AtmosphereTiers::getName(quality), litFlat, shadowedFlat);
         EXPECT_NEAR(shadowedFlat, litFlat, std::max(litFlat, shadowedFlat) * 0.02) << AtmosphereTiers::getName(quality);
     }
@@ -481,13 +481,13 @@ TEST_F(AtmosphereGpu, LocalVolumetricFog){
     // 1 m outside the size plus the blend distance
     ASSERT_TRUE(project(camera, Vector3(4.5f, 3.0f, -10.0f), outsideX, outsideY));
     ASSERT_TRUE(project(camera, Vector3(3.9f, 3.0f, -10.0f), cornerX, cornerY));
-    EXPECT_GT(luminance(boxed, insideX - 2, insideY - 2, 4, 4), luminance(clear, insideX - 2, insideY - 2, 4, 4) + 20.0);
-    EXPECT_NEAR(luminance(boxed, outsideX - 2, outsideY - 2, 4, 4), luminance(clear, outsideX - 2, outsideY - 2, 4, 4), 1.5);
+    EXPECT_GT(atmosphereLuminance(boxed, insideX - 2, insideY - 2, 4, 4), atmosphereLuminance(clear, insideX - 2, insideY - 2, 4, 4) + 20.0);
+    EXPECT_NEAR(atmosphereLuminance(boxed, outsideX - 2, outsideY - 2, 4, 4), atmosphereLuminance(clear, outsideX - 2, outsideY - 2, 4, 4), 1.5);
     // the box's corner is beyond 3.9 m only when it turns
-    EXPECT_NEAR(luminance(boxed, cornerX - 1, cornerY - 2, 2, 4), luminance(clear, cornerX - 1, cornerY - 2, 2, 4), 1.5);
+    EXPECT_NEAR(atmosphereLuminance(boxed, cornerX - 1, cornerY - 2, 2, 4), atmosphereLuminance(clear, cornerX - 1, cornerY - 2, 2, 4), 1.5);
     volume.setRotation(0.0f, 45.0f, 0.0f);
     ASSERT_TRUE(render());
-    EXPECT_GT(luminance(readAtmosphereTarget(), cornerX - 1, cornerY - 2, 2, 4), luminance(clear, cornerX - 1, cornerY - 2, 2, 4) + 3.0);
+    EXPECT_GT(atmosphereLuminance(readAtmosphereTarget(), cornerX - 1, cornerY - 2, 2, 4), atmosphereLuminance(clear, cornerX - 1, cornerY - 2, 2, 4) + 3.0);
 
     // ten volumes: the tier's cap, the nearest first
     std::vector<std::unique_ptr<LocalVolumetricFog>> more;
@@ -558,7 +558,7 @@ TEST_F(AtmosphereGpu, VolumetricClouds){
             const std::vector<uint8_t> second = readAtmosphereTarget();
             // static per-pixel jitter, no history: a converged frame is the one before it
             EXPECT_TRUE(first == second) << presets[p] << " " << qualityNames[q];
-            EXPECT_GOLDEN_OPTIONS(std::string("atmosphere_clouds_") + presets[p] + "_" + qualityNames[q], goldenTolerance());
+            EXPECT_GOLDEN_OPTIONS(std::string("atmosphere_clouds_") + presets[p] + "_" + qualityNames[q], atmosphereGoldenTolerance());
         }
     }
     EXPECT_NO_ENGINE_ERRORS();
@@ -645,13 +645,13 @@ TEST_F(AtmosphereGpu, ScreenCloudsHideFarTerrain){
     Engine::setAtmosphereQuality(AtmosphereQuality::HIGH);
     ASSERT_TRUE(settleClouds(scene));
     EXPECT_EQ(info().cloudsMode, CloudsRendering::SCREEN);
-    EXPECT_GT(std::fabs(luminance(readAtmosphereTarget(), mountainX - 8, mountainY - 8, 16, 16) - luminance(bare, mountainX - 8, mountainY - 8, 16, 16)), 4.0);
+    EXPECT_GT(std::fabs(atmosphereLuminance(readAtmosphereTarget(), mountainX - 8, mountainY - 8, 16, 16) - atmosphereLuminance(bare, mountainX - 8, mountainY - 8, 16, 16)), 4.0);
 
     // the Sky Map clouds are behind every surface
     clouds.setRendering(CloudsRendering::SKY_MAP);
     ASSERT_TRUE(settleClouds(scene));
     EXPECT_EQ(info().cloudsMode, CloudsRendering::SKY_MAP);
-    EXPECT_NEAR(luminance(readAtmosphereTarget(), mountainX - 8, mountainY - 8, 16, 16), luminance(bare, mountainX - 8, mountainY - 8, 16, 16), 1.0);
+    EXPECT_NEAR(atmosphereLuminance(readAtmosphereTarget(), mountainX - 8, mountainY - 8, 16, 16), atmosphereLuminance(bare, mountainX - 8, mountainY - 8, 16, 16), 1.0);
     EXPECT_NO_ENGINE_ERRORS();
 }
 

@@ -29,7 +29,7 @@ using namespace jasperengine::titleart::test;
 
 namespace {
 
-    Json rim(double width, Json extra = Json::object()) {
+    Json titleGeometryRim(double width, Json extra = Json::object()) {
         Json r = {{"width", width}};
         for (auto it = extra.begin(); it != extra.end(); ++it) r[it.key()] = it.value();
         return r;
@@ -89,7 +89,7 @@ namespace {
 
 TEST_F(TitleGeometryTest, TextElementsGrowRimsCumulatively) {
     const TitleArtDoc doc = documentWith({{{"type", "text"}, {"id", "0000000a"}, {"text", "確定"}, {"font", fontRef(DELA_GOTHIC)},
-                                           {"style", {{"rims", Json::array({rim(3), rim(4, {{"enabled", false}}), rim(0), rim(5, {{"join", "round"}, {"fill_counters", true}, {"offset", {0, -2}}})})}}}}});
+                                           {"style", {{"rims", Json::array({titleGeometryRim(3), titleGeometryRim(4, {{"enabled", false}}), titleGeometryRim(0), titleGeometryRim(5, {{"join", "round"}, {"fill_counters", true}, {"offset", {0, -2}}})})}}}}});
     TitleGeometry geometry(&assets);
     const Json& layer = doc.layers()[0];
     const LayerElements els = geometry.elements(layer, doc);
@@ -124,7 +124,7 @@ TEST_F(TitleGeometryTest, TextElementsGrowRimsCumulatively) {
 TEST_F(TitleGeometryTest, PerCharacterFacesSplitTheFaceButNotTheRims) {
     const Json red = {{"fill", {{"color", "#ff0000"}}}};
     const TitleArtDoc doc = documentWith({{{"type", "text"}, {"text", "確定確"}, {"font", fontRef(DELA_GOTHIC)},
-                                           {"chars", {{"1", {{"face", red}}}}}, {"style", {{"rims", Json::array({rim(3)})}}}}});
+                                           {"chars", {{"1", {{"face", red}}}}}, {"style", {{"rims", Json::array({titleGeometryRim(3)})}}}}});
     TitleGeometry geometry(&assets);
     const Json& layer = doc.layers()[0];
     const LayerElements els = geometry.elements(layer, doc);
@@ -346,7 +346,7 @@ TEST_F(TitleGeometryTest, BoundsFollowTransformsGroupsAndReach) {
 TEST_F(TitleGeometryTest, ImageLayersGrowFromTheirAlpha) {
     assets.addImage("textures/disc.png", disc(64, 32, 14));
     const TitleArtDoc doc = documentWith({{{"type", "image"}, {"image", fontRef("textures/disc.png")}, {"size", 200},
-                                           {"style", {{"rims", Json::array({rim(5), rim(5, {{"plate", {{"kind", "hull"}}}})})}}}}});
+                                           {"style", {{"rims", Json::array({titleGeometryRim(5), titleGeometryRim(5, {{"plate", {{"kind", "hull"}}}})})}}}}});
     TitleGeometry geometry(&assets);
     const LayerElements els = geometry.elements(doc.layers()[0], doc);
     EXPECT_TRUE(els.fromAlpha);
@@ -380,7 +380,7 @@ TEST_F(TitleGeometryTest, VectorShapeModeKeepsStrokesAndReportsWhatItIgnores) {
                    "<path d='M70 10 L95 40' stroke='#000' stroke-width='6' stroke-linecap='round' fill='none'/>"
                    "<text x='0' y='10'>Hi</text></svg>");
     const TitleArtDoc doc = documentWith({{{"type", "vector"}, {"svg", fontRef("art/logo.svg")}, {"size", 100},
-                                           {"style", {{"rims", Json::array({rim(4)})}}}}});
+                                           {"style", {{"rims", Json::array({titleGeometryRim(4)})}}}}});
     TitleGeometry geometry(&assets);
     const LayerElements els = geometry.elements(doc.layers()[0], doc);
     ASSERT_EQ(els.elements.size(), 2u);

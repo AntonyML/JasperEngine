@@ -20,7 +20,7 @@ using namespace jasperengine;
 namespace {
 
     // R1's example
-    const char* const kExample = R"({
+    const char* const kClipAudioExample = R"({
   "format": "jasperengine.anim",
   "version": 3,
   "frame_rate": 30,
@@ -51,7 +51,7 @@ namespace {
 }
 
 TEST(ClipAudio, RoundTripsTheSpecExampleAsVersionThree){
-    anim::ClipParseResult parsed = anim::parseClip(kExample);
+    anim::ClipParseResult parsed = anim::parseClip(kClipAudioExample);
     ASSERT_TRUE(parsed.ok()) << parsed.error.toString();
     EXPECT_TRUE(parsed.warnings.empty()) << parsed.warnings.front().path << ": " << parsed.warnings.front().message;
     const ClipData& data = *parsed.data;

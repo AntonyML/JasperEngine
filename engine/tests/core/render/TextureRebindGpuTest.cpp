@@ -62,13 +62,13 @@ using namespace jasperengine::test;
 
 namespace {
 
-    struct Rgba { uint8_t r, g, b, a; };
-    constexpr Rgba RED{230, 40, 30, 255};
-    constexpr Rgba BLUE{30, 60, 230, 255};
-    constexpr Rgba GREY_BRIGHT{240, 240, 240, 255};
-    constexpr Rgba GREY_DARK{40, 40, 40, 255};
-    constexpr Rgba WHITE{255, 255, 255, 255};
-    constexpr Rgba BLACK{0, 0, 0, 255};
+    struct TextureRebindRgba { uint8_t r, g, b, a; };
+    constexpr TextureRebindRgba RED{230, 40, 30, 255};
+    constexpr TextureRebindRgba BLUE{30, 60, 230, 255};
+    constexpr TextureRebindRgba GREY_BRIGHT{240, 240, 240, 255};
+    constexpr TextureRebindRgba GREY_DARK{40, 40, 40, 255};
+    constexpr TextureRebindRgba WHITE{255, 255, 255, 255};
+    constexpr TextureRebindRgba BLACK{0, 0, 0, 255};
 
     std::vector<uint8_t> readTextureRebindTarget(){
         Framebuffer& target = GpuEnvironment::target();
@@ -92,7 +92,7 @@ namespace {
         return sum / (double)pixels;
     }
 
-    void writeColorPng(const std::string& path, Rgba color){
+    void writeColorPng(const std::string& path, TextureRebindRgba color){
         std::vector<uint8_t> pixels(16 * 16 * 4);
         for (size_t i = 0; i < pixels.size(); i += 4){
             pixels[i] = color.r;
@@ -105,7 +105,7 @@ namespace {
 
     // the file's new pixels as the hot reload takes them (reload::reloadTextures): decoded, in the
     // pool, the GPU texture stale; false when nothing loaded reads the file
-    bool reloadFile(const std::string& path, Rgba color){
+    bool reloadFile(const std::string& path, TextureRebindRgba color){
         writeColorPng(path, color);
         bool found = false;
         for (const std::string& id : TextureDataPool::findIdsUsingFile(FileData::getSystemPath(path))){
@@ -147,7 +147,7 @@ namespace {
         TempDir dir;
         Scene* scene = nullptr;
 
-        std::string png(const std::string& name, Rgba color){
+        std::string png(const std::string& name, TextureRebindRgba color){
             const std::string path = dir.file(name + ".png").generic_string();
             writeColorPng(path, color);
             return path;
@@ -164,7 +164,7 @@ namespace {
 
         // the reference with the final pixels from the start; then the holder of a file of other
         // pixels, its file reloaded after it was drawn
-        void expectRebinds(const char* what, Rgba first, Rgba final, const std::function<void(Stage&, const std::string& path, Rgba color, Keep& keep)>& make,
+        void expectRebinds(const char* what, TextureRebindRgba first, TextureRebindRgba final, const std::function<void(Stage&, const std::string& path, TextureRebindRgba color, Keep& keep)>& make,
                            const std::function<void(Scene&)>& atTheEnd = nullptr){
             std::vector<uint8_t> reference;
             {
@@ -202,7 +202,7 @@ namespace {
 
 TEST_F(TextureRebindGpu, AUiImageBindsANewImage){
     JASPER_REQUIRE_GPU();
-    expectRebinds("ui", RED, BLUE, [](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("ui", RED, BLUE, [](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
         stage.camera.setType(CameraType::CAMERA_UI);
         stage.camera.setPosition(0.0f, 0.0f, 1.0f);
@@ -216,7 +216,7 @@ TEST_F(TextureRebindGpu, AUiImageBindsANewImage){
 
 TEST_F(TextureRebindGpu, PointsBindANewImage){
     JASPER_REQUIRE_GPU();
-    expectRebinds("points", RED, BLUE, [](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("points", RED, BLUE, [](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
         auto points = std::make_shared<Points>(&stage.scene);
         points->setTexture(path);
@@ -227,7 +227,7 @@ TEST_F(TextureRebindGpu, PointsBindANewImage){
 
 TEST_F(TextureRebindGpu, ASkyBindsANewImage){
     JASPER_REQUIRE_GPU();
-    expectRebinds("sky", RED, BLUE, [](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("sky", RED, BLUE, [](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
         auto sky = std::make_shared<Skybox>(&stage.scene);
         sky->setTextures(path, path, path, path, path, path);
@@ -239,7 +239,7 @@ TEST_F(TextureRebindGpu, ASkyBindsANewImage){
 TEST_F(TextureRebindGpu, ASkysLightingTakesANewImage){
     JASPER_REQUIRE_GPU();
     Entity surface = NULL_ENTITY;
-    expectRebinds("sky-lighting", GREY_DARK, GREY_BRIGHT, [&surface](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("sky-lighting", GREY_DARK, GREY_BRIGHT, [&surface](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
         auto sky = std::make_shared<Skybox>(&stage.scene);
         sky->setTextures(path, path, path, path, path, path);
@@ -337,7 +337,7 @@ namespace {
     }
 
     // the same image as a cook's (TextureCookQueue::collectSwaps): BC1 blocks of the one colour, nothing plain to read
-    void swapInACookOf(const std::string& path, Rgba color){
+    void swapInACookOf(const std::string& path, TextureRebindRgba color){
         std::vector<std::string> ids = TextureDataPool::findIdsUsingFile(FileData::getSystemPath(path));
         ASSERT_FALSE(ids.empty());
         const uint16_t color565 = (uint16_t)(((color.r >> 3) << 11) | ((color.g >> 2) << 5) | (color.b >> 3));
@@ -359,7 +359,7 @@ namespace {
 TEST_F(TextureRebindGpu, AReflectionProbesLightingTakesANewImage){
     JASPER_REQUIRE_GPU();
     Entity surface = NULL_ENTITY;
-    expectRebinds("probe-lighting", GREY_DARK, GREY_BRIGHT, [&surface](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("probe-lighting", GREY_DARK, GREY_BRIGHT, [&surface](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
         keep.push_back(makeProbe(stage, path));
         keep.push_back(makeProbeSurface(stage, &surface));
@@ -372,7 +372,7 @@ TEST_F(TextureRebindGpu, AReflectionProbesLightingTakesANewImage){
 // Two probes of one image: the maps of the old pixels go with their last holder, the new ones are shared
 TEST_F(TextureRebindGpu, TwoReflectionProbesOfAnImageBothTakeItsNewPixels){
     JASPER_REQUIRE_GPU();
-    expectRebinds("probe-shared", GREY_DARK, GREY_BRIGHT, [](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("probe-shared", GREY_DARK, GREY_BRIGHT, [](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
         // (the one the surface takes, the nearer of the two, is made after the other)
         auto far = makeProbe(stage, path);
@@ -435,7 +435,7 @@ TEST_F(TextureRebindGpu, AReflectionProbesLightingStaysWhenACookComesInThatTheCp
 
 namespace {
     // a terrain under the camera: its first layer red, its second blue, weighted by its blend map
-    std::shared_ptr<Terrain> makeTerrain(Stage& stage, const std::string& heightMap, const std::string& blendMap, const std::string& red, const std::string& blue){
+    std::shared_ptr<Terrain> textureRebindMakeTerrain(Stage& stage, const std::string& heightMap, const std::string& blendMap, const std::string& red, const std::string& blue){
         auto terrain = std::make_shared<Terrain>(&stage.scene);
         terrain->setSize(4.0f);
         terrain->setMaxHeight(1.5f);
@@ -449,12 +449,12 @@ namespace {
 
 TEST_F(TextureRebindGpu, ATerrainsHeightMapBindsANewImage){
     JASPER_REQUIRE_GPU();
-    const std::string blendMap = png("terrain-height-blend", Rgba{255, 0, 0, 255});
+    const std::string blendMap = png("terrain-height-blend", TextureRebindRgba{255, 0, 0, 255});
     const std::string red = png("terrain-height-red", RED);
     const std::string blue = png("terrain-height-blue", BLUE);
-    expectRebinds("terrain-height", BLACK, WHITE, [&](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("terrain-height", BLACK, WHITE, [&](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
-        keep.push_back(makeTerrain(stage, path, blendMap, red, blue));
+        keep.push_back(textureRebindMakeTerrain(stage, path, blendMap, red, blue));
     });
 }
 
@@ -463,9 +463,9 @@ TEST_F(TextureRebindGpu, ATerrainsBlendMapBindsANewImage){
     const std::string heightMap = png("terrain-blend-height", BLACK);
     const std::string red = png("terrain-blend-red", RED);
     const std::string blue = png("terrain-blend-blue", BLUE);
-    expectRebinds("terrain-blend", Rgba{255, 0, 0, 255}, Rgba{0, 255, 0, 255}, [&](Stage& stage, const std::string& path, Rgba color, Keep& keep){
+    expectRebinds("terrain-blend", TextureRebindRgba{255, 0, 0, 255}, TextureRebindRgba{0, 255, 0, 255}, [&](Stage& stage, const std::string& path, TextureRebindRgba color, Keep& keep){
         writeColorPng(path, color);
-        keep.push_back(makeTerrain(stage, heightMap, path, red, blue));
+        keep.push_back(textureRebindMakeTerrain(stage, heightMap, path, red, blue));
     });
 }
 
@@ -474,12 +474,12 @@ TEST_F(TextureRebindGpu, ATerrainsBlendMapBindsANewImage){
 TEST_F(TextureRebindGpu, ATerrainsLayerImageBindsANewImage){
     JASPER_REQUIRE_GPU();
     const std::string heightMap = png("terrain-layer-height", BLACK);
-    const std::string blendMap = png("terrain-layer-blend", Rgba{255, 0, 0, 255});
+    const std::string blendMap = png("terrain-layer-blend", TextureRebindRgba{255, 0, 0, 255});
     const std::string blue = png("terrain-layer-blue", BLUE);
     const auto draw = [&](const std::string& layer, const std::function<void(Scene&, Entity)>& then){
         Stage stage;
         scene = &stage.scene;
-        auto terrain = makeTerrain(stage, heightMap, blendMap, layer, blue);
+        auto terrain = textureRebindMakeTerrain(stage, heightMap, blendMap, layer, blue);
         EXPECT_TRUE(settled());
         if (then){
             then(stage.scene, terrain->getEntity());
@@ -505,10 +505,10 @@ TEST_F(TextureRebindGpu, ATerrainsLayerImageBindsANewImage){
 namespace {
     // a cook of `size` px and its whole chain, as the raw writer stores it: the levels of at most
     // 64 px (the tail a progressive load reads first) one colour, the rest another
-    std::vector<uint8_t> progressiveKtx2(int size, Rgba top, Rgba tail, uint64_t& tailBytes){
+    std::vector<uint8_t> progressiveKtx2(int size, TextureRebindRgba top, TextureRebindRgba tail, uint64_t& tailBytes){
         std::vector<std::vector<uint8_t>> levels;
         for (int s = size; ; s /= 2){
-            const Rgba color = s <= 64 ? tail : top;
+            const TextureRebindRgba color = s <= 64 ? tail : top;
             std::vector<uint8_t> level((size_t)s * s * 4);
             for (size_t i = 0; i < level.size(); i += 4){
                 level[i] = color.r;

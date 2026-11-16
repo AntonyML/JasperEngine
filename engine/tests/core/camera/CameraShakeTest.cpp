@@ -43,15 +43,15 @@ namespace {
 
     constexpr float SHAKE_DT = 1.0f / 60.0f;
 
-    ShakePreset preset(ShakeType type, float strength, float roughness, float fadeIn, float fadeOut,
-                       Vector3 position = Vector3(1, 1, 1), Vector3 rotation = Vector3(1, 1, 1)){
+    ShakePreset cameraShakePreset(ShakeType type, float strength, float roughness, float fadeIn, float fadeOut,
+                       Vector3 cameraShakePosition = Vector3(1, 1, 1), Vector3 rotation = Vector3(1, 1, 1)){
         ShakePreset p;
         p.type = type;
         p.strength = strength;
         p.roughness = roughness;
         p.fadeIn = fadeIn;
         p.fadeOut = fadeOut;
-        p.positionInfluence = position;
+        p.positionInfluence = cameraShakePosition;
         p.rotationInfluence = rotation;
         return p;
     }
@@ -78,10 +78,10 @@ namespace {
             Engine::removeScene(&scene);
         }
 
-        Entity camera(Vector3 position = Vector3(0, 0, 10), CameraType type = CameraType::CAMERA_PERSPECTIVE){
+        Entity camera(Vector3 cameraShakePosition = Vector3(0, 0, 10), CameraType type = CameraType::CAMERA_PERSPECTIVE){
             Entity entity = scene.createEntity();
             Transform transform;
-            transform.position = position;
+            transform.position = cameraShakePosition;
             scene.addComponent<Transform>(entity, transform);
             CameraComponent cameraComponent;
             cameraComponent.type = type;
@@ -148,7 +148,7 @@ TEST(ShakeNoise, RangeLatticeAndContinuity){
 // ---- 2. the fade timeline
 
 TEST(ShakeTimeline, OneShotFadesInThenOutAndEnds){
-    ShakeInstance instance(preset(ShakeType::OneShot, 1, 1, 0.05f, 1.0f), 3);
+    ShakeInstance instance(cameraShakePreset(ShakeType::OneShot, 1, 1, 0.05f, 1.0f), 3);
     int fullStep = -1, endStep = -1;
     float previousFade = 0.0f;
     bool decreased = false;
@@ -165,7 +165,7 @@ TEST(ShakeTimeline, OneShotFadesInThenOutAndEnds){
 }
 
 TEST(ShakeTimeline, SustainedHoldsUntilStop){
-    ShakeInstance instance(preset(ShakeType::Sustained, 1, 1, 0.1f, 2.0f), 3);
+    ShakeInstance instance(cameraShakePreset(ShakeType::Sustained, 1, 1, 0.1f, 2.0f), 3);
     for (int i = 0; i < 300; i++) instance.step(SHAKE_DT);
     EXPECT_EQ(instance.getState(), ShakeState::Sustained);
     EXPECT_FLOAT_EQ(instance.getFade(), 1.0f);
@@ -179,7 +179,7 @@ TEST(ShakeTimeline, SustainedHoldsUntilStop){
 }
 
 TEST(ShakeTimeline, ZeroFadeInIsInstantAndZeroStepsChangeNothing){
-    ShakeInstance instance(preset(ShakeType::Sustained, 1, 1, 0.0f, 0.0f), 3);
+    ShakeInstance instance(cameraShakePreset(ShakeType::Sustained, 1, 1, 0.0f, 0.0f), 3);
     instance.step(0.0f);
     EXPECT_EQ(instance.getState(), ShakeState::FadingIn);
     EXPECT_FLOAT_EQ(instance.getFade(), 0.0f);
@@ -194,7 +194,7 @@ TEST(ShakeTimeline, ZeroFadeInIsInstantAndZeroStepsChangeNothing){
 
 TEST(ShakeTimeline, UpdateReturnsTheOffsetBeforeTheStep){
     // MilkShake's UpdateShake: the first frame of a shake is still (fade 0)
-    ShakeInstance instance(preset(ShakeType::Sustained, 1, 10, 0.0f, 0.0f), 42);
+    ShakeInstance instance(cameraShakePreset(ShakeType::Sustained, 1, 10, 0.0f, 0.0f), 42);
     ShakeOffset first = instance.update(SHAKE_DT);
     EXPECT_EQ(first.position, Vector3(0, 0, 0));
     EXPECT_EQ(first.rotation, Vector3(0, 0, 0));
@@ -207,7 +207,7 @@ TEST(ShakeTimeline, UpdateReturnsTheOffsetBeforeTheStep){
 // ---- 3. MilkShake's formulas
 
 TEST(ShakeFormula, MatchesMilkShake){
-    const ShakePreset p = preset(ShakeType::Sustained, 0.7f, 30.0f, 0.0f, 0.0f, Vector3(1, 2, 3), Vector3(4, 5, 6));
+    const ShakePreset p = cameraShakePreset(ShakeType::Sustained, 0.7f, 30.0f, 0.0f, 0.0f, Vector3(1, 2, 3), Vector3(4, 5, 6));
     const int b = 100;
     const float t = 100.5f;
     const float strength = 0.7f;
@@ -251,7 +251,7 @@ TEST(ShakeFormula, EulerOrderIsZThenXThenY){
 // ---- 4. scales and shakeAt
 
 TEST(ShakeScales, StrengthAndRoughnessScales){
-    const ShakePreset p = preset(ShakeType::Sustained, 1, 10, 0, 0);
+    const ShakePreset p = cameraShakePreset(ShakeType::Sustained, 1, 10, 0, 0);
     ShakeInstance a(p, 9), b(p, 9);
     b.strengthScale = 0.5f;
     b.roughnessScale = 2.0f;
@@ -372,7 +372,7 @@ TEST_F(Shake, ShakerSetsTheViewOffsetAndNeverTheTransform){
 
 TEST_F(Shake, ZeroStrengthLeavesNoOffset){
     Entity cam = camera();
-    ShakePreset p = preset(ShakeType::Sustained, 0.0f, 10.0f, 0.0f, 0.0f);
+    ShakePreset p = cameraShakePreset(ShakeType::Sustained, 0.0f, 10.0f, 0.0f, 0.0f);
     CameraShaker(&scene, cam).shake(ShakeSource(p));
     step(SHAKE_DT, 10);
     EXPECT_FALSE(cameraOf(cam).hasViewOffset);
@@ -391,7 +391,7 @@ TEST_F(Shake, OrthographicCameraShakesXYAndRollInTenthsOfTheViewHeight){
     cameraOf(cam).topClip = 20.0f;
     cameraOf(cam).leftClip = 0.0f;
     cameraOf(cam).rightClip = 30.0f;
-    CameraShaker(&scene, cam).shake(ShakeSource(preset(ShakeType::Sustained, 1.0f, 20.0f, 0.0f, 0.0f)));
+    CameraShaker(&scene, cam).shake(ShakeSource(cameraShakePreset(ShakeType::Sustained, 1.0f, 20.0f, 0.0f, 0.0f)));
     float maxX = 0.0f;
     for (int i = 0; i < 600; i++){
         step();
@@ -565,7 +565,7 @@ TEST_F(Shake, TransformModeShakesAnAnchoredImageAdditively){
     ShakeOptions options;
     options.hasSeed = true;
     options.seed = 37;
-    ShakeInstanceHandle handle = shakerObject.shake(ShakeSource(preset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.2f,
+    ShakeInstanceHandle handle = shakerObject.shake(ShakeSource(cameraShakePreset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.2f,
                                                                        Vector3(1, 1, 0), Vector3(0, 0, 40))), options);
     bool rolled = false;
     for (int i = 0; i < 6; i++){
@@ -598,18 +598,18 @@ TEST_F(Shake, TransformModeRestoresAPlainTransformExactly){
     transform.rotation = Quaternion(0.9f, 0.1f, 0.3f, 0.2f).normalized();
     scene.addComponent<Transform>(prop, transform);
     scene.addComponent<CameraShakerComponent>(prop, {});
-    const Vector3 position = transform.position;
+    const Vector3 cameraShakePosition = transform.position;
     const Quaternion rotation = scene.getComponent<Transform>(prop).rotation;
     ShakeInstanceHandle handle = CameraShaker(&scene, prop).shake(ShakeSource("bump"));
     bool moved = false;
     for (int i = 0; i < 6; i++){
         step();
-        moved = moved || scene.getComponent<Transform>(prop).position != position;
+        moved = moved || scene.getComponent<Transform>(prop).position != cameraShakePosition;
     }
     EXPECT_TRUE(moved);
     while (handle.isValid()) step();
     step();
-    EXPECT_EQ(scene.getComponent<Transform>(prop).position, position);
+    EXPECT_EQ(scene.getComponent<Transform>(prop).position, cameraShakePosition);
     EXPECT_EQ(scene.getComponent<Transform>(prop).rotation, rotation);
 }
 
@@ -678,10 +678,10 @@ TEST(ShakeFile, BuiltinsMatchTheGamesMilkShakeAssets){
     EXPECT_EQ(builtinShakePresets().size(), 19u);
     const ShakePreset* punch = findBuiltinShakePreset("punch");
     ASSERT_TRUE(punch);
-    EXPECT_EQ(*punch, preset(ShakeType::OneShot, 0.5f, 2.5f, 0.05f, 1.0f, Vector3(4, 0, 0), Vector3(20, 90, 20)));
+    EXPECT_EQ(*punch, cameraShakePreset(ShakeType::OneShot, 0.5f, 2.5f, 0.05f, 1.0f, Vector3(4, 0, 0), Vector3(20, 90, 20)));
     const ShakePreset* entity = findBuiltinShakePreset("entity_shake");
     ASSERT_TRUE(entity);
-    EXPECT_EQ(*entity, preset(ShakeType::OneShot, 0.2f, 15.0f, 7.0f, 2.0f, Vector3(0, 0, 0), Vector3(20, 0, 20)));
+    EXPECT_EQ(*entity, cameraShakePreset(ShakeType::OneShot, 0.2f, 15.0f, 7.0f, 2.0f, Vector3(0, 0, 0), Vector3(20, 0, 20)));
     EXPECT_EQ(findBuiltinShakePreset("explosion.shake"), nullptr);
 }
 
@@ -689,7 +689,7 @@ TEST_F(Shake, ShakeFilesPlayAndReloadWhenEdited){
     cameratest::AssetRoot assets;   // asset paths under the test's temporary root
     Entity cam = camera();
     ShakePresetPool::clear();
-    ShakePreset p = preset(ShakeType::Sustained, 0.3f, 4.0f, 0.0f, 0.0f);
+    ShakePreset p = cameraShakePreset(ShakeType::Sustained, 0.3f, 4.0f, 0.0f, 0.0f);
     cameratest::writeAsset("shakes/boom.shake", writeShakePreset(p));
     ShakeInstanceHandle handle = CameraShake::shake(ShakeSource("shakes/boom.shake"));
     ASSERT_TRUE(handle.isValid());
@@ -795,7 +795,7 @@ TEST_F(Shake, TransformModeLeavesRelativeScriptMovesExact){
     ShakeOptions options;
     options.hasSeed = true;
     options.seed = 11;
-    ShakeInstanceHandle handle = CameraShaker(&scene, prop).shake(ShakeSource(preset(ShakeType::OneShot, 1.0f, 13.0f, 0.05f, 0.3f,
+    ShakeInstanceHandle handle = CameraShaker(&scene, prop).shake(ShakeSource(cameraShakePreset(ShakeType::OneShot, 1.0f, 13.0f, 0.05f, 0.3f,
                                                                                     Vector3(1, 1, 1), Vector3(5, 5, 5))), options);
     const Vector3 velocity(0.5f, 0.0f, -0.25f);
     int frames = 0;
@@ -829,7 +829,7 @@ TEST_F(Shake, TwoDTransformModeUsesTheSceneCameraHeight){
     CameraShakerComponent component;
     component.mode = CameraShakeMode::Mode2D;
     scene.addComponent<CameraShakerComponent>(sprite, component);
-    CameraShaker(&scene, sprite).shake(ShakeSource(preset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.0f)));
+    CameraShaker(&scene, sprite).shake(ShakeSource(cameraShakePreset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.0f)));
     float maxX = 0.0f;
     for (int i = 0; i < 300; i++){
         step();
@@ -854,7 +854,7 @@ TEST_F(Shake, TheAudioListenerKeepsTheSteadyUp){
 
 TEST_F(Shake, RemovingOrAddingTheCameraSwitchesModeCleanly){
     Entity cam = camera(Vector3(1, 2, 3));
-    CameraShaker(&scene, cam).shake(ShakeSource(preset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.0f)));
+    CameraShaker(&scene, cam).shake(ShakeSource(cameraShakePreset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.0f)));
     step(SHAKE_DT, 4);
     ASSERT_TRUE(cameraOf(cam).hasViewOffset);
     scene.removeComponent<CameraComponent>(cam);

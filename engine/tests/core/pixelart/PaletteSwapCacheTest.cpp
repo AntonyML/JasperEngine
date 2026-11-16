@@ -30,7 +30,7 @@ namespace {
 
     namespace fs = std::filesystem;
 
-    std::string readFile(const fs::path& path) {
+    std::string paletteSwapCacheReadFile(const fs::path& path) {
         std::ifstream in(path, std::ios::binary);
         std::ostringstream text;
         text << in.rdbuf();
@@ -64,7 +64,7 @@ TEST(PaletteSwapCache, EveryBuiltinBindsWithoutOverflow) {
         if (entry.path().extension() != ".palette") continue;
         Palette palette;
         std::vector<Diagnostic> diagnostics;
-        ASSERT_TRUE(PaletteCodec::read(readFile(entry.path()), palette, diagnostics)) << entry.path();
+        ASSERT_TRUE(PaletteCodec::read(paletteSwapCacheReadFile(entry.path()), palette, diagnostics)) << entry.path();
         if (palette.count() > kSwapMaxSourceColors) continue;   // not a swap source (R14)
         PaletteSwapData data;
         diagnostics.clear();
@@ -76,7 +76,7 @@ TEST(PaletteSwapCache, EveryBuiltinBindsWithoutOverflow) {
 }
 
 TEST(PaletteSwapCache, FourHundredLospecPalettesBindWithoutOverflow) {
-    nlohmann::json root = nlohmann::json::parse(readFile(repo() / "editor/tests/fixtures/palettes/lospec-400.json"), nullptr, false);
+    nlohmann::json root = nlohmann::json::parse(paletteSwapCacheReadFile(repo() / "editor/tests/fixtures/palettes/lospec-400.json"), nullptr, false);
     ASSERT_TRUE(root.is_object());
     const nlohmann::json& palettes = root["palettes"];
     ASSERT_EQ(palettes.size(), 400u);

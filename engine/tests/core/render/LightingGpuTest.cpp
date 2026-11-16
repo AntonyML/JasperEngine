@@ -97,14 +97,14 @@ namespace {
     };
 
     // the largest channel difference, the mean of it, and the share of pixels over 24
-    struct Difference{
+    struct LightingDifference{
         int maxDiff = 0;
         double meanDiff = 0.0;
         double badFraction = 0.0;
     };
 
-    Difference differenceOf(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
-        Difference d;
+    LightingDifference lightingDifferenceOf(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
+        LightingDifference d;
         if (a.size() != b.size() || a.empty()){
             d.maxDiff = 255;
             d.meanDiff = 255.0;
@@ -173,7 +173,7 @@ TEST_F(LightingGpu, TiledDrawsSixtyFourLightsOnOnePlane){
     LightingTiers::setLightMode(LightMode::PER_OBJECT);
     ASSERT_TRUE(render());
     EXPECT_FALSE(renderSystem().getLightingStats().tiledLights);
-    const Difference perObject = differenceOf(tiled, readLightingTarget());
+    const LightingDifference perObject = lightingDifferenceOf(tiled, readLightingTarget());
     EXPECT_GT(perObject.badFraction, 0.05) << "Per Object drew the 64 lights as Tiled does (mean " << perObject.meanDiff << ")";
     EXPECT_NO_ENGINE_ERRORS();
 }
@@ -201,7 +201,7 @@ TEST_F(LightingGpu, TiledMatchesPerObjectWithinTheCap){
     LightingTiers::setLightMode(LightMode::TILED);
     ASSERT_TRUE(render());
     ASSERT_TRUE(renderSystem().getLightingStats().tiledLights);
-    const Difference difference = differenceOf(perObject, readLightingTarget());
+    const LightingDifference difference = lightingDifferenceOf(perObject, readLightingTarget());
     EXPECT_LE(difference.maxDiff, 2) << "mean " << difference.meanDiff;
     EXPECT_NO_ENGINE_ERRORS();
 }
@@ -278,10 +278,10 @@ TEST_F(LightingGpu, CapsuleShadowsOfACapsulesOnlyCharacter){
     ASSERT_TRUE(render());
     EXPECT_FALSE(renderSystem().getLightingStats().capsuleShadows);
     const std::vector<uint8_t> off = readLightingTarget();
-    const Difference shadow = differenceOf(withCapsules, off);
+    const LightingDifference shadow = lightingDifferenceOf(withCapsules, off);
     EXPECT_GT(shadow.badFraction, 0.001);
     EXPECT_GT(shadow.maxDiff, 60);
-    EXPECT_LE(differenceOf(faded, off).maxDiff, 2) << "Intensity 0 still darkened the ground";
+    EXPECT_LE(lightingDifferenceOf(faded, off).maxDiff, 2) << "Intensity 0 still darkened the ground";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -369,7 +369,7 @@ TEST_F(LightingGpu, ContactShadowsHighAndMedium){
     scene.getComponent<LightComponent>(setup.sun.getEntity()).contactShadows = false;
     ASSERT_TRUE(render());
     EXPECT_FALSE(renderSystem().getLightingStats().contactShadows);
-    EXPECT_GT(differenceOf(withContact, readLightingTarget()).maxDiff, 8) << "contact shadows changed nothing";
+    EXPECT_GT(lightingDifferenceOf(withContact, readLightingTarget()).maxDiff, 8) << "contact shadows changed nothing";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -446,7 +446,7 @@ TEST_F(LightingGpu, OrderIndependentThreePlanesInBothOrders){
     planes.clear();
     threePlanes(scene, planes, true);
     ASSERT_TRUE(render());
-    const Difference difference = differenceOf(forward, readLightingTarget());
+    const LightingDifference difference = lightingDifferenceOf(forward, readLightingTarget());
     EXPECT_LE(difference.maxDiff, 2) << "the order of the planes changed the image (mean " << difference.meanDiff << ")";
     EXPECT_NO_ENGINE_ERRORS();
 }
@@ -486,14 +486,14 @@ TEST_F(LightingGpu, OrderIndependentWaitsForItsPrograms){
     EXPECT_TRUE(renderSystem().getLightingStats().oit);
     EXPECT_FALSE(renderSystem().isAllLoaded()) << "the scene counted as loaded with its OIT programs building";
     EXPECT_FALSE(hasPass(passLabels(), "oit accumulation"));
-    const Difference whileBuilding = differenceOf(sorted, readLightingTarget());
+    const LightingDifference whileBuilding = lightingDifferenceOf(sorted, readLightingTarget());
     EXPECT_LE(whileBuilding.maxDiff, 2) << "while its programs build the camera does not draw as Sorted does (mean "
                                         << whileBuilding.meanDiff << ")";
 
     held.store(false);
     ASSERT_TRUE(render()) << "the scene never finished loading once the OIT programs could build";
     EXPECT_TRUE(hasPass(passLabels(), "oit accumulation")) << "Order Independent never turned on once its programs were built";
-    EXPECT_GT(differenceOf(sorted, readLightingTarget()).maxDiff, 2) << "built, the camera still draws as Sorted does";
+    EXPECT_GT(lightingDifferenceOf(sorted, readLightingTarget()).maxDiff, 2) << "built, the camera still draws as Sorted does";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -515,7 +515,7 @@ TEST_F(LightingGpu, OrderIndependentFallsBackToSorted){
     EXPECT_FALSE(stats.oit);
     EXPECT_TRUE(stats.oitFallback);
     EXPECT_FALSE(hasPass(passLabels(), "oit accumulation"));
-    EXPECT_LE(differenceOf(sorted, readLightingTarget()).maxDiff, 1);
+    EXPECT_LE(lightingDifferenceOf(sorted, readLightingTarget()).maxDiff, 1);
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -549,6 +549,6 @@ TEST_F(LightingGpu, HairShadingModelSphere){
     MaterialPbr::setShadingModel(material.pbr.edit(), ShadingModel::STANDARD);
     sphere.setMaterial(material);
     ASSERT_TRUE(render());
-    EXPECT_GT(differenceOf(hair, readLightingTarget()).badFraction, 0.01) << "Hair shaded as Standard does";
+    EXPECT_GT(lightingDifferenceOf(hair, readLightingTarget()).badFraction, 0.01) << "Hair shaded as Standard does";
     EXPECT_NO_ENGINE_ERRORS();
 }

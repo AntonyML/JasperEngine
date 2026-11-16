@@ -70,7 +70,7 @@ namespace {
     }
 
     // a counter: a text layer the exposed `text` drives, over a plate, under a frame line
-    std::shared_ptr<const TitleArtDoc> counterDoc(double size, double tracking = 0.0, Json extra = Json::object(), bool plates = true,
+    std::shared_ptr<const TitleArtDoc> titleGlyphAtlasCounterDoc(double size, double tracking = 0.0, Json extra = Json::object(), bool plates = true,
                                                   int canvasWidth = 720, int canvasHeight = 220) {
         Json text{{"id", ATLAS_TEXT_LAYER}, {"type", "text"}, {"name", "Score"}, {"text", "1,234,567"}, {"font", fontRef(SOURCE_SANS)},
                   {"size", size}, {"tracking", tracking}, {"align", "start"},
@@ -215,7 +215,7 @@ namespace {
 
 TEST_F(TitleGlyphAtlasGpu, CounterMatchesRealtimeAndAChangeComposesOnly) {
     // a counter's usual set-up: tabular figures, no kerning, so a new value keeps every glyph's place
-    auto doc = counterDoc(110, 0, {{"features", {{"tnum", 1}}}, {"kerning", false}});
+    auto doc = titleGlyphAtlasCounterDoc(110, 0, {{"features", {{"tnum", 1}}}, {"kerning", false}});
     auto live = glyphLive(doc);
     ASSERT_TRUE(live->glyphAtlasPlan().fallback.empty()) << live->glyphAtlasPlan().fallback;
     live->setState(atlasState(), stateHash("1,234,567"), textOverride("1,234,567"));
@@ -253,7 +253,7 @@ TEST_F(TitleGlyphAtlasGpu, CounterMatchesRealtimeAndAChangeComposesOnly) {
 // S86's one-new-draw-a-frame rule skips a pass and expects it to run again; the job's compose and
 // page copies never do. From no draw state known yet, every glyph must still reach the image.
 TEST_F(TitleGlyphAtlasGpu, FirstDrawsOfACleanDeviceLeaveNoHoles) {
-    auto doc = counterDoc(110, 0, {{"features", {{"tnum", 1}}}, {"kerning", false}});
+    auto doc = titleGlyphAtlasCounterDoc(110, 0, {{"features", {{"tnum", 1}}}, {"kerning", false}});
     TitleFirstDraws::resetForTesting(false);
     auto live = glyphLive(doc);
     live->setState(atlasState(), stateHash("1,234,567"), textOverride("1,234,567"));
@@ -266,7 +266,7 @@ TEST_F(TitleGlyphAtlasGpu, FirstDrawsOfACleanDeviceLeaveNoHoles) {
 
 TEST_F(TitleGlyphAtlasGpu, RimsStayBehindEveryFace) {
     // tracking pulls the glyphs together: each rim reaches under the next glyph's face
-    auto doc = counterDoc(110, -200, {{"style", {{"face", solidFace("#ffd040")}, {"rims", Json::array({atlasRimOf("00000101", 16, "#802000")})}}}},
+    auto doc = titleGlyphAtlasCounterDoc(110, -200, {{"style", {{"face", solidFace("#ffd040")}, {"rims", Json::array({atlasRimOf("00000101", 16, "#802000")})}}}},
                           false);
     auto live = glyphLive(doc);
     live->setState(atlasState(), stateHash("88888"), textOverride("88888"));
@@ -286,7 +286,7 @@ TEST_F(TitleGlyphAtlasGpu, RimsStayBehindEveryFace) {
 }
 
 TEST_F(TitleGlyphAtlasGpu, AtlasGrowsEvictsAndSaysWhenFull) {
-    auto doc = counterDoc(150, 0, {}, false);
+    auto doc = titleGlyphAtlasCounterDoc(150, 0, {}, false);
     // growth: ten digits of 150 px do not fit one 512 page
     auto live = glyphLive(doc);
     live->setState(atlasState(512, 8), stateHash("0123456789"), textOverride("0123456789"));
@@ -321,7 +321,7 @@ TEST_F(TitleGlyphAtlasGpu, ACellsFaceKeepsItsInkNotTheLayersGlow) {
     // the Title Designer's reference look: size 220, a rim, Light Glow at its default 200 px radius, a drop shadow
     const Json effects = Json::array({Json{{"id", "0000d001"}, {"type", "light_glow"}, {"params", Json::object()}},
                                       Json{{"id", "0000d002"}, {"type", "drop_shadow"}, {"params", Json::object()}}});
-    auto doc = counterDoc(220, 0, {{"effects", effects}}, false, 1920, 1080);
+    auto doc = titleGlyphAtlasCounterDoc(220, 0, {{"effects", effects}}, false, 1920, 1080);
 
     auto wide = glyphLive(doc);
     wide->setState(atlasState(2048, 4), stateHash("JACKPOT"), textOverride("JACKPOT"));
@@ -380,7 +380,7 @@ TEST_F(TitleGlyphAtlasGpu, ACellsFaceKeepsItsInkNotTheLayersGlow) {
 }
 
 TEST_F(TitleGlyphAtlasGpu, WarpIsSkippedAndFallbacksRenderAsRealtime) {
-    auto warped = counterDoc(110, 0, {{"warp", {{"style", "arc"}}}});
+    auto warped = titleGlyphAtlasCounterDoc(110, 0, {{"warp", {{"style", "arc"}}}});
     const TitleGlyphAtlasPlan plan = planTitleGlyphAtlas(*warped);
     ASSERT_EQ(plan.unsafeLabels(), std::vector<std::string>{"Warp"});
     auto live = glyphLive(warped);
@@ -392,7 +392,7 @@ TEST_F(TitleGlyphAtlasGpu, WarpIsSkippedAndFallbacksRenderAsRealtime) {
                  "warp skipped");
 
     // R30: a plan that falls back (3D text) renders as Realtime: no atlas
-    auto doc = counterDoc(110);
+    auto doc = titleGlyphAtlasCounterDoc(110);
     auto fallback = std::make_unique<TitleArtLive>("assets/score.titleart", TitleArtRenderMode::GLYPH_ATLAS, doc, 1);
     TitleGlyphAtlasPlan three;
     three.textLayer = ATLAS_TEXT_LAYER;
@@ -407,7 +407,7 @@ TEST_F(TitleGlyphAtlasGpu, WarpIsSkippedAndFallbacksRenderAsRealtime) {
 
 TEST_F(TitleGlyphAtlasGpu, CellsKeepOnlyTheirReach) {
     // S80's 64-pixel ROI grid would need two 1,024 pages for these (the red control)
-    auto doc = counterDoc(150, 0, {}, false);
+    auto doc = titleGlyphAtlasCounterDoc(150, 0, {}, false);
     auto live = glyphLive(doc);
     live->setState(atlasState(1024, 8), stateHash("0123456789"), textOverride("0123456789"));
     atlasRunFrames(*live, factory());
@@ -417,7 +417,7 @@ TEST_F(TitleGlyphAtlasGpu, CellsKeepOnlyTheirReach) {
 
     // a look that reaches far (a drop shadow) keeps its reach
     Json shadow = Json::array({Json{{"id", "00000201"}, {"type", "drop_shadow"}, {"params", {{"distance", 14}, {"size", 10}}}}});
-    auto shadowed = counterDoc(110, 300, {{"effects", shadow}}, false);
+    auto shadowed = titleGlyphAtlasCounterDoc(110, 300, {{"effects", shadow}}, false);
     auto withShadow = glyphLive(shadowed);
     withShadow->setState(atlasState(), stateHash("123"), textOverride("123"));
     atlasRunFrames(*withShadow, factory());
@@ -428,7 +428,7 @@ TEST_F(TitleGlyphAtlasGpu, CellsKeepOnlyTheirReach) {
 TEST_F(TitleGlyphAtlasGpu, PerCharacterLooks) {
     // the third character larger, turned and green; the line a little larger
     Json chars{{"2", {{"scale", 1.4}, {"rotation", 20}, {"face", solidFace("#40ff80")}}}};
-    auto adjusted = counterDoc(100, 0, {{"chars", chars}, {"lines", {{"0", {{"scale", 1.1}}}}}}, false);
+    auto adjusted = titleGlyphAtlasCounterDoc(100, 0, {{"chars", chars}, {"lines", {{"0", {{"scale", 1.1}}}}}}, false);
     auto live = glyphLive(adjusted);
     live->setState(atlasState(), stateHash("12345"), textOverride("12345"));
     atlasRunFrames(*live, factory());
@@ -436,14 +436,14 @@ TEST_F(TitleGlyphAtlasGpu, PerCharacterLooks) {
     const Pixels glyph = atlasFrontPixels(*live);
     expectWithin(glyph, realtimeAt(adjusted, "12345", *live->glyphAtlas(), 100), "12345 per-character looks");
     // the adjustments show: without them the render differs
-    auto plain = counterDoc(100, 0, {}, false);
+    auto plain = titleGlyphAtlasCounterDoc(100, 0, {}, false);
     const Difference without = compare(glyph, realtime(plain, textOverride("12345")));
     EXPECT_GT(without.overFraction, ATLAS_TOLERANCE_OVER * 4) << "the looks are visible";
 }
 
 TEST_F(TitleGlyphAtlasGpu, TheTextLayersOpacityAndBlend) {
     // the text layer at 70 % opacity, multiplied over its plate
-    auto blended = counterDoc(110, 0, {{"blend", "multiply"}, {"opacity", 0.7}});
+    auto blended = titleGlyphAtlasCounterDoc(110, 0, {{"blend", "multiply"}, {"opacity", 0.7}});
     auto blend = glyphLive(blended);
     blend->setState(atlasState(), stateHash("1,234"), textOverride("1,234"));
     atlasRunFrames(*blend, factory());
@@ -453,7 +453,7 @@ TEST_F(TitleGlyphAtlasGpu, TheTextLayersOpacityAndBlend) {
 
 // S85 R15: the per-glyph values of an animation compose as moved, tinted, flashed cells
 TEST_F(TitleGlyphAtlasGpu, GlyphPosesMoveTintAndFlashCells) {
-    auto doc = counterDoc(110, 0, {{"style", {{"face", solidFace("#ffffff")}, {"rims", Json::array()}}}}, false);
+    auto doc = titleGlyphAtlasCounterDoc(110, 0, {{"style", {{"face", solidFace("#ffffff")}, {"rims", Json::array()}}}}, false);
     auto runWith = [&](std::map<uint32_t, GlyphPose> poses, const std::string& key) {
         auto live = glyphLive(doc);
         live->setGlyphPoses(std::make_shared<const std::map<uint32_t, GlyphPose>>(std::move(poses)));
@@ -523,7 +523,7 @@ TEST(TitleGlyphAtlasPrebake, StringsCoverEveryDigitPlace) {
 TEST_F(TitleGlyphAtlasGpu, APrebakedAtlasServesTheFirstValue) {
     // the export prebakes in one call on a device that has drawn nothing: no frame will come
     TitleFirstDraws::resetForTesting(false);
-    auto doc = counterDoc(110, 0, {{"features", {{"tnum", 1}}}, {"kerning", false}});
+    auto doc = titleGlyphAtlasCounterDoc(110, 0, {{"features", {{"tnum", 1}}}, {"kerning", false}});
     // the export's side (R32): the initial value and every digit at its digit places, read back and
     // written as files
     auto exported = glyphLive(doc);

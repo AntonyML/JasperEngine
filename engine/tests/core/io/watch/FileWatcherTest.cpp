@@ -21,10 +21,10 @@ namespace fs = std::filesystem;
 
 namespace {
 
-    using ms = std::chrono::milliseconds;
+    using fileWatcherMs = std::chrono::milliseconds;
 
     // The polling backend runs at 250 ms in these tests (the shortest interval allowed)
-    constexpr ms POLL_INTERVAL{250};
+    constexpr fileWatcherMs POLL_INTERVAL{250};
 
     class FileWatcherTests : public ::testing::TestWithParam<WatchBackendKind> {
     protected:
@@ -51,12 +51,12 @@ namespace {
                 changesReady.notify_all();
             }, DeliverOn::Worker);
             // the index is built and the backend armed before the first edit
-            ASSERT_TRUE(waitFor([this]() { return service.stats().indexReady; }, timeLimit(ms(5000))));
+            ASSERT_TRUE(waitFor([this]() { return service.stats().indexReady; }, timeLimit(fileWatcherMs(5000))));
             if (GetParam() == WatchBackendKind::Polling) std::this_thread::sleep_for(POLL_INTERVAL * 2);
         }
 
         // within 1 s (native) or interval + 1 s (polling) (AC1)
-        ms limit() const { return timeLimit(GetParam() == WatchBackendKind::Native ? ms(1000) : POLL_INTERVAL + ms(1000)); }
+        fileWatcherMs limit() const { return timeLimit(GetParam() == WatchBackendKind::Native ? fileWatcherMs(1000) : POLL_INTERVAL + fileWatcherMs(1000)); }
 
         std::vector<FileChange> take() {
             std::lock_guard<std::mutex> lock(mutex);
@@ -87,7 +87,7 @@ namespace {
         }
     };
 
-    std::string describe(const std::vector<FileChange>& list) {
+    std::string fileWatcherDescribe(const std::vector<FileChange>& list) {
         std::string out;
         for (const FileChange& c : list) {
             out += std::string(fileChangeKindName(c.kind)) + " " + c.path.generic_string();
@@ -103,19 +103,19 @@ TEST_P(FileWatcherTests, CreateModifyDeleteRename) {
     startWatching();
     const fs::path file = dir.path / "assets" / "a.png";
     fs::create_directories(file.parent_path());
-    ASSERT_TRUE(service.flush(timeLimit(ms(5000))));
+    ASSERT_TRUE(service.flush(timeLimit(fileWatcherMs(5000))));
     take();
 
     writeText(file, "one");
     std::vector<FileChange> got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Added);
     EXPECT_EQ(got[0].path, file);
 
     // (another size, so the stamp differs even on a coarse clock)
     writeText(file, "two, longer");
     got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
     EXPECT_EQ(got[0].path, file);
     EXPECT_EQ(got[0].size, 11u);
@@ -123,14 +123,14 @@ TEST_P(FileWatcherTests, CreateModifyDeleteRename) {
     const fs::path renamed = dir.path / "assets" / "b.png";
     fs::rename(file, renamed);
     got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Moved);
     EXPECT_EQ(got[0].path, renamed);
     EXPECT_EQ(got[0].oldPath, file);
 
     fs::remove(renamed);
     got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Removed);
     EXPECT_EQ(got[0].path, renamed);
 }
@@ -144,7 +144,7 @@ TEST_P(FileWatcherTests, SafeSaveTempRename) {
     writeText(temp, "replacement bytes");
     fs::rename(temp, target);
     const std::vector<FileChange> got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
     EXPECT_EQ(got[0].path, target);
     EXPECT_FALSE(names(got, ".tmp"));
@@ -162,7 +162,7 @@ TEST_P(FileWatcherTests, SafeSaveVimBackup) {
     writeText(target, "return { speed = 2 }");
     fs::remove(backup);
     const std::vector<FileChange> got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
     EXPECT_EQ(got[0].path, target);
     EXPECT_FALSE(names(got, "~"));
@@ -177,11 +177,11 @@ TEST_P(FileWatcherTests, TruncateWrite) {
     {
         std::ofstream out(target, std::ios::binary | std::ios::trunc);
         out.flush();
-        std::this_thread::sleep_for(ms(5));
+        std::this_thread::sleep_for(fileWatcherMs(5));
         out << "body { color: red; }";
     }
     const std::vector<FileChange> got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
     EXPECT_EQ(got[0].size, 20u);
 }
@@ -192,10 +192,10 @@ TEST_P(FileWatcherTests, DeleteRecreate) {
     startWatching();
 
     fs::remove(target);
-    std::this_thread::sleep_for(ms(20));
+    std::this_thread::sleep_for(fileWatcherMs(20));
     writeText(target, "v2 bytes");
     const std::vector<FileChange> got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
     EXPECT_EQ(got[0].path, target);
 }
@@ -209,12 +209,12 @@ TEST_P(FileWatcherTests, DirectoryMoveExpands) {
     fs::create_directories(moved);
     // the new folder is known before the move (a loaded host's poll may take longer than 400 ms)
     const std::vector<FileChange> made = collect(1);
-    ASSERT_TRUE(names(made, "art")) << describe(made);
+    ASSERT_TRUE(names(made, "art")) << fileWatcherDescribe(made);
     fs::rename(folder, moved / "textures");
     const std::vector<FileChange> got = collect(51);
-    EXPECT_EQ(countKind(got, FileChangeKind::Moved, true), 1u) << describe(got);
-    EXPECT_EQ(countKind(got, FileChangeKind::Moved, false), 50u) << describe(got);
-    EXPECT_EQ(got.size(), 51u) << describe(got);
+    EXPECT_EQ(countKind(got, FileChangeKind::Moved, true), 1u) << fileWatcherDescribe(got);
+    EXPECT_EQ(countKind(got, FileChangeKind::Moved, false), 50u) << fileWatcherDescribe(got);
+    EXPECT_EQ(got.size(), 51u) << fileWatcherDescribe(got);
 }
 
 TEST_P(FileWatcherTests, NewDirPopulatedBeforeWatch) {
@@ -224,8 +224,8 @@ TEST_P(FileWatcherTests, NewDirPopulatedBeforeWatch) {
     fs::create_directories(folder);
     for (int i = 0; i < 20; i++) writeText(folder / ("f" + std::to_string(i) + ".lua"), "return " + std::to_string(i));
     const std::vector<FileChange> got = collect(20);
-    EXPECT_EQ(countKind(got, FileChangeKind::Added, false), 20u) << describe(got);
-    EXPECT_EQ(got.size(), 20u) << describe(got);
+    EXPECT_EQ(countKind(got, FileChangeKind::Added, false), 20u) << fileWatcherDescribe(got);
+    EXPECT_EQ(got.size(), 20u) << fileWatcherDescribe(got);
 }
 
 TEST_P(FileWatcherTests, OverflowEmitsRescan) {
@@ -233,17 +233,17 @@ TEST_P(FileWatcherTests, OverflowEmitsRescan) {
     // 5,000 writes whose events are lost (the backend drops them, as an overflow would)
     service.setSuppressDeliveryForTesting(true);
     for (int i = 0; i < 5000; i++) writeText(dir.path / ("bulk" + std::to_string(i / 500)) / ("f" + std::to_string(i) + ".txt"), std::to_string(i));
-    service.flush(ms(2000));
+    service.flush(fileWatcherMs(2000));
     service.injectOverflowForTesting();
     service.setSuppressDeliveryForTesting(false);
     ASSERT_TRUE(waitFor([&]() {
         std::lock_guard<std::mutex> lock(mutex);
         return std::any_of(changes.begin(), changes.end(), [](const FileChange& c) { return c.kind == FileChangeKind::Rescan; });
-    }, ms(5000)));
+    }, fileWatcherMs(5000)));
     EXPECT_GE(service.stats().overflows, 1u);
     // the rescan turned the lost writes into ordinary changes, and the index is the disk
     EXPECT_TRUE(service.indexMatchesDiskForTesting());
-    ASSERT_TRUE(service.flush(timeLimit(ms(5000))));
+    ASSERT_TRUE(service.flush(timeLimit(fileWatcherMs(5000))));
     const std::vector<FileChange> got = take();
     EXPECT_EQ(countKind(got, FileChangeKind::Added, false), 5000u);
 }
@@ -254,9 +254,9 @@ TEST_P(FileWatcherTests, ExcludedFoldersCostNothing) {
     for (const char* name : {".git", "build", "node_modules", "Trash", ".jasperengine"}) {
         writeText(dir.path / name / "deep" / "x.png", "ignored");
     }
-    ASSERT_TRUE(service.flush(timeLimit(ms(5000))));
+    ASSERT_TRUE(service.flush(timeLimit(fileWatcherMs(5000))));
     const std::vector<FileChange> got = take();
-    EXPECT_TRUE(got.empty()) << describe(got);
+    EXPECT_TRUE(got.empty()) << fileWatcherDescribe(got);
     // no watch was added under them (inotify: one per folder)
     EXPECT_EQ(service.stats().watches, watchesBefore);
 }
@@ -327,13 +327,13 @@ namespace {
             std::lock_guard<std::mutex> lock(mutex);
             changes.insert(changes.end(), batch.begin(), batch.end());
         }, DeliverOn::Worker);
-        ASSERT_TRUE(waitFor([&]() { return service.stats().indexReady; }, timeLimit(ms(10000))));
+        ASSERT_TRUE(waitFor([&]() { return service.stats().indexReady; }, timeLimit(fileWatcherMs(10000))));
         EXPECT_EQ(service.stats().state, state);
         writeText(dir.path / "new.lua", "return 1");
         EXPECT_TRUE(waitFor([&]() {
             std::lock_guard<std::mutex> lock(mutex);
             return !changes.empty();
-        }, timeLimit(ms(3000))));
+        }, timeLimit(fileWatcherMs(3000))));
     }
 
 }

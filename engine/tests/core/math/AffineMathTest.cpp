@@ -23,7 +23,7 @@ using namespace jasperengine;
 namespace {
 
     // a few float steps of the larger magnitude
-    void expectClose(const Matrix4& actual, const Matrix4& expected, const char* what){
+    void affineMathExpectClose(const Matrix4& actual, const Matrix4& expected, const char* what){
         for (int c = 0; c < 4; c++){
             for (int r = 0; r < 4; r++){
                 const float a = actual.get(c, r);
@@ -65,7 +65,7 @@ TEST(AffineMath, ComposeTRSIsTheProduct){
         const Vector3 s = random.scale();
         const Matrix4 general = Matrix4::translateMatrix(t) * r.getRotationMatrix() * Matrix4::scaleMatrix(s);
         const Matrix4 composed = Matrix4::composeTRS(t, r, s);
-        expectClose(composed, general, "composeTRS");
+        affineMathExpectClose(composed, general, "composeTRS");
         EXPECT_TRUE(composed.isAffine());
     }
 }
@@ -75,7 +75,7 @@ TEST(AffineMath, AffineMultiplyIsTheProduct){
     for (int i = 0; i < 200; i++){
         const Matrix4 a = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
         const Matrix4 b = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
-        expectClose(a.affineMultiply(b), a * b, "affineMultiply");
+        affineMathExpectClose(a.affineMultiply(b), a * b, "affineMultiply");
     }
 }
 
@@ -92,7 +92,7 @@ TEST(AffineMath, AffineInverseIsTheInverse){
     AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Matrix4 m = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
-        expectClose(m.affineInverse(), m.inverse(), "affineInverse");
+        affineMathExpectClose(m.affineInverse(), m.inverse(), "affineInverse");
     }
     // a zero scale is singular: the general inverse's result, infinities and all
     const Matrix4 flat = Matrix4::composeTRS(Vector3(1, 2, 3), Quaternion(), Vector3(1, 0, 1));

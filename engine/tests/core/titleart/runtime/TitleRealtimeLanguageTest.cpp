@@ -28,12 +28,12 @@ namespace {
     constexpr uint32_t LANGUAGE_UNLIMITED = 1000000000u;
     constexpr double LANGUAGE_TOLERANCE_MEAN = 1.0;
     constexpr double LANGUAGE_TOLERANCE_OVER = 0.01;
-    constexpr double SIZE = 96.0;
+    constexpr double TITLE_REALTIME_LANGUAGE_SIZE = 96.0;
     constexpr const char* LANGUAGE_TEXT_LAYER = "00000001";
 
-    std::shared_ptr<const TitleArtDoc> multilingual() {
+    std::shared_ptr<const TitleArtDoc> titleRealtimeLanguageMultilingual() {
         Json text{{"id", LANGUAGE_TEXT_LAYER}, {"type", "text"}, {"name", "Title"}, {"text", "WIN"}, {"font", fontRef(SOURCE_SANS)},
-                  {"size", SIZE}, {"align", "start"}, {"kerning", false},
+                  {"size", TITLE_REALTIME_LANGUAGE_SIZE}, {"align", "start"}, {"kerning", false},
                   {"style", {{"face", solidFace("#ffd040")},
                              {"rims", Json::array({Json{{"id", "00000101"}, {"width", 6.0}, {"material", solidFace("#802000")}}})}}},
                   {"translations", Json{{"de", Json{{"text", "GEWINN"}}},
@@ -89,7 +89,7 @@ namespace {
         return s;
     }
 
-    uint64_t hashOf(const std::string& code) { return fnv1a64(code) + 1; }
+    uint64_t titleRealtimeLanguageHashOf(const std::string& code) { return fnv1a64(code) + 1; }
 
     class TitleRealtimeLanguageGpu : public ::testing::Test {
     protected:
@@ -126,9 +126,9 @@ namespace {
 }
 
 TEST_F(TitleRealtimeLanguageGpu, RealtimeShowsEachLanguage) {
-    auto doc = multilingual();
+    auto doc = titleRealtimeLanguageMultilingual();
     TitleArtLive live("assets/language.titleart", TitleArtRenderMode::REALTIME, doc, 1);
-    live.setState(languageState(), hashOf(""), {});
+    live.setState(languageState(), titleRealtimeLanguageHashOf(""), {});
     languageRunFrames(live, factory());
     ASSERT_TRUE(live.front().valid()) << live.status().error;
     const Pixels english = languageFrontPixels(live);
@@ -136,7 +136,7 @@ TEST_F(TitleRealtimeLanguageGpu, RealtimeShowsEachLanguage) {
     Pixels previous = english;
     for (const char* code : {"de", "ja"}) {
         ASSERT_TRUE(live.setLanguage(code));
-        live.setState(languageState(), hashOf(code), {});
+        live.setState(languageState(), titleRealtimeLanguageHashOf(code), {});
         // the render is sliced: while it runs, the last language stays (R17)
         languageRunFrames(live, factory(), 200, 1);
         if (live.hasWork()) {
@@ -152,10 +152,10 @@ TEST_F(TitleRealtimeLanguageGpu, RealtimeShowsEachLanguage) {
 }
 
 TEST_F(TitleRealtimeLanguageGpu, GlyphAtlasShowsEachLanguage) {
-    auto doc = multilingual();
+    auto doc = titleRealtimeLanguageMultilingual();
     TitleArtLive live("assets/language.titleart", TitleArtRenderMode::GLYPH_ATLAS, doc, 1);
     live.setGlyphPlan(planTitleGlyphAtlas(*doc));
-    live.setState(languageState(), hashOf(""), {});
+    live.setState(languageState(), titleRealtimeLanguageHashOf(""), {});
     languageRunFrames(live, factory());
     ASSERT_TRUE(live.front().valid()) << live.status().error;
     ASSERT_TRUE(live.glyphAtlas()) << "rendered per glyph: " << live.glyphAtlasPlan().fallback;
@@ -167,7 +167,7 @@ TEST_F(TitleRealtimeLanguageGpu, GlyphAtlasShowsEachLanguage) {
     for (const auto& language : languages) {
         ASSERT_TRUE(live.setLanguage(language.code));
         ASSERT_TRUE(live.glyphAtlasPlan().fallback.empty()) << live.glyphAtlasPlan().fallback;
-        live.setState(languageState(), hashOf(language.code), {});
+        live.setState(languageState(), titleRealtimeLanguageHashOf(language.code), {});
         languageRunFrames(live, factory());
         ASSERT_TRUE(live.front().valid()) << live.status().error;
         ASSERT_TRUE(live.glyphAtlas());
@@ -175,7 +175,7 @@ TEST_F(TitleRealtimeLanguageGpu, GlyphAtlasShowsEachLanguage) {
         // the reference sits where Glyph Atlas snapped the string (TitleGlyphAtlasGpuTest's rule)
         std::vector<FieldOverride> snapped;
         for (int i = 0; i < language.characters; i++) {
-            snapped.push_back(FieldOverride{LANGUAGE_TEXT_LAYER, "chars." + std::to_string(i) + ".offset", Json::array({snapX / SIZE * 100.0, -snapY / SIZE * 100.0})});
+            snapped.push_back(FieldOverride{LANGUAGE_TEXT_LAYER, "chars." + std::to_string(i) + ".offset", Json::array({snapX / TITLE_REALTIME_LANGUAGE_SIZE * 100.0, -snapY / TITLE_REALTIME_LANGUAGE_SIZE * 100.0})});
         }
         const Pixels shown = languageFrontPixels(live);
         expectWithin(shown, oneShot(doc, language.code, snapped), std::string("Glyph Atlas ") + language.code);

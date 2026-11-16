@@ -28,7 +28,7 @@ using namespace voxeltest;
 
 namespace {
 
-    constexpr float DT = 1.0f / 60.0f;
+    constexpr float VOXEL_PHYSICS_DT = 1.0f / 60.0f;
 
     Vec3d toLocal(const Vector3& v) { return Vec3d{v.x, v.y, v.z}; }
 
@@ -43,8 +43,8 @@ namespace {
 
         void SetUp() override {
             updateTime = Engine::getUpdateTime();
-            Engine::setUpdateTime(DT);
-            Engine::setFixedDeltatime(DT);
+            Engine::setUpdateTime(VOXEL_PHYSICS_DT);
+            Engine::setFixedDeltatime(VOXEL_PHYSICS_DT);
             scene = std::make_unique<Scene>();
             test::disableSubSystems(*scene);
             scene->getScheduler().setEnabled("PhysicsSystem", true);
@@ -102,8 +102,8 @@ namespace {
 
         void step(int count = 1) {
             for (int i = 0; i < count; i++) {
-                scene->fixedUpdate(DT);
-                scene->update(DT);
+                scene->fixedUpdate(VOXEL_PHYSICS_DT);
+                scene->update(VOXEL_PHYSICS_DT);
             }
         }
 
@@ -275,10 +275,10 @@ TEST_F(VoxelPhysics, RebuildContract) {
     for (int i = 0; i < 4 && collisionUpdates == 0; i++) {
         EXPECT_FALSE(isAwake(sitting));
         EXPECT_NEAR(heightOf(sitting), rest, 0.001f);
-        scene->update(DT);
+        scene->update(VOXEL_PHYSICS_DT);
         if (i == 1) system->finishPendingWork();
-        scene->fixedUpdate(DT);
-        scene->update(DT);
+        scene->fixedUpdate(VOXEL_PHYSICS_DT);
+        scene->update(VOXEL_PHYSICS_DT);
     }
     for (int i = 0; i < 20 && collisionUpdates == 0; i++) {
         system->finishPendingWork();

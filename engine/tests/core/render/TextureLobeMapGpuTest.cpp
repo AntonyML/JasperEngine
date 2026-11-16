@@ -103,7 +103,7 @@ namespace {
         });
     }
 
-    Texture namedTexture(const std::string& id){
+    Texture textureLobeMapNamedTexture(const std::string& id){
         Texture texture;
         texture.setId(id);
         return texture;
@@ -115,7 +115,7 @@ namespace {
         material.baseColorFactor = Vector4(0.5f, 0.5f, 0.55f, 1.0f);
         material.metallicFactor = 0.0f;
         material.roughnessFactor = 0.5f;
-        const Texture map = id.empty() ? Texture() : namedTexture(id);
+        const Texture map = id.empty() ? Texture() : textureLobeMapNamedTexture(id);
         MaterialPbrExtensions& pbr = material.pbr.edit();
         switch (lobe){
         case Lobe::Clearcoat:
@@ -181,7 +181,7 @@ namespace {
     void addWhiteBaseColor(Material& material){
         static const uint8_t white[4] = {255, 255, 255, 255};
         registerSplitImage("bf17-white", white, white);
-        material.baseColorTexture = namedTexture("bf17-white");
+        material.baseColorTexture = textureLobeMapNamedTexture("bf17-white");
     }
 
     class TextureLobeMapGpu : public ::testing::TestWithParam<LobeCase> {
@@ -283,7 +283,7 @@ TEST_P(TextureLobeMapGpu, AMapGivenToALoadedMaterialAndTakenAwayIsDrawnThenGone)
         }
         submesh.needUpdateTexture = true;
     };
-    setMap(namedTexture(id));
+    setMap(textureLobeMapNamedTexture(id));
     EXPECT_LT(lobeMeanDifference(settledFrame(), withMap), 0.25) << c.name << ": the map given to the loaded material is not drawn";
     setMap(Texture());
     EXPECT_LT(lobeMeanDifference(settledFrame(), noMap), 0.25) << c.name << ": the map taken away still draws";
@@ -444,7 +444,7 @@ TEST_P(CoreMapEnvironmentGpu, ACoreMapAloneIsBoundUnderImageBasedLightingAlone){
     if (c.map == &Material::emissiveTexture)
         plain.emissiveFactor = Vector3(0.5f, 0.5f, 0.5f);
     Material mapAlone = plain;
-    mapAlone.*(c.map) = namedTexture(id);
+    mapAlone.*(c.map) = textureLobeMapNamedTexture(id);
     Material withWhite = mapAlone;
     addWhiteBaseColor(withWhite);
 

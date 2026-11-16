@@ -330,7 +330,7 @@ TEST(ShaderWarmup, SkipsMalformedEntriesAndUnknownVersions){
 
 namespace {
 
-    const char* FLAT = R"(#version 450
+    const char* ASYNC_CREATE_FLAT = R"(#version 450
 
 in vec2 v_texcoord;
 out vec4 frag_color;
@@ -377,7 +377,7 @@ void main(){
                 [&](const std::string& file, std::string& content){
                     if (file != path)
                         return false;
-                    content = FLAT;
+                    content = ASYNC_CREATE_FLAT;
                     return true;
                 }, ShaderType::POSTPROCESS);
             if (!sources.valid){
@@ -410,7 +410,7 @@ void main(){
         }
     };
 
-    void litCube(Primitive& cube, Light& sun){
+    void asyncCreateLitCube(Primitive& cube, Light& sun){
         cube.createBox(1.5f, 1.5f, 1.5f);
         cube.setColor(0.2f, 0.6f, 0.9f);
         cube.setRotation(0.0f, 30.0f, 0.0f);
@@ -713,7 +713,7 @@ TEST_F(AsyncCreateGpu, EveryGlModeDrawsTheLitCube){
         {
             Primitive cube(&scene);
             Light sun(&scene);
-            litCube(cube, sun);
+            asyncCreateLitCube(cube, sun);
             ASSERT_TRUE(render()) << "the scene never finished loading";
             EXPECT_GOLDEN("render_lit_cube");
             const GpuCreationStats after = SystemRender::getGpuCreationStats();
@@ -763,7 +763,7 @@ TEST_F(AsyncCreateGpu, AStandInDrawsWhileTheVariantIsPending){
     auto first = std::make_unique<Primitive>(&scene);
     auto second = std::make_unique<Primitive>(&scene);
     Light sun(&scene);
-    litCube(*first, sun);
+    asyncCreateLitCube(*first, sun);
     first->setPosition(-1.2f, 0.0f, 0.0f);
     second->createBox(1.0f, 1.0f, 1.0f);
     second->setColor(0.9f, 0.4f, 0.2f);
@@ -814,7 +814,7 @@ TEST_F(AsyncCreateGpu, AVariantSwitchLeavesNoFrameEmpty){
     const std::vector<uint8_t> background = readAsyncCreateTarget();
     Primitive cube(&scene);
     Light sun(&scene);
-    litCube(cube, sun);
+    asyncCreateLitCube(cube, sun);
     ASSERT_TRUE(render());
     const std::vector<uint8_t> unfogged = readAsyncCreateTarget();
     const auto covered = [&background](const std::vector<uint8_t>& frame){
@@ -869,7 +869,7 @@ TEST_F(AsyncCreateGpu, ThePipelineCacheIsSavedAndValidated){
     {
         Primitive cube(&scene);
         Light sun(&scene);
-        litCube(cube, sun);
+        asyncCreateLitCube(cube, sun);
         ASSERT_TRUE(render());
     }
     SokolAsyncCreate::savePipelineCache();

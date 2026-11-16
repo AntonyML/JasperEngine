@@ -38,7 +38,7 @@ namespace jasperengine::titleart::fxtest {
 namespace {
 
     // S80's ten core effects (TitleArtEffectsGpuTest.cpp covers them)
-    const std::set<std::string> CORE_EFFECTS = {"outer_glow", "inner_glow", "drop_shadow", "inner_shadow", "outline", "color_overlay",
+    const std::set<std::string> TITLE_FX_CATALOGUE_CORE_EFFECTS = {"outer_glow", "inner_glow", "drop_shadow", "inner_shadow", "outline", "color_overlay",
                                                 "gradient_overlay", "pattern_overlay", "gaussian_blur", "adjust"};
 
     struct FxCase {
@@ -96,7 +96,7 @@ namespace {
     std::vector<const EffectDef*> catalogueEffects() {
         std::vector<const EffectDef*> out;
         for (const EffectDef* d : TitleEffectRegistry::get().effects()) {
-            if (!CORE_EFFECTS.count(d->type) && std::string_view(d->type).rfind("test_", 0) != 0) out.push_back(d);
+            if (!TITLE_FX_CATALOGUE_CORE_EFFECTS.count(d->type) && std::string_view(d->type).rfind("test_", 0) != 0) out.push_back(d);
         }
         return out;
     }

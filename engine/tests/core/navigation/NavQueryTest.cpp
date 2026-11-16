@@ -20,7 +20,7 @@ namespace {
     class NavQueryTest : public NavSceneTest {};
 
     // the points every `step` metres along a path's corners
-    std::vector<Vector3> samples(const nav::NavPath& path, float step = 0.05f) {
+    std::vector<Vector3> navQuerySamples(const nav::NavPath& path, float step = 0.05f) {
         std::vector<Vector3> points;
         for (size_t i = 0; i + 1 < path.corners.size(); i++) {
             const Vector3 a = path.corners[i], b = path.corners[i + 1];
@@ -61,7 +61,7 @@ TEST_F(NavQueryTest, AreaCosts){
     const nav::NavPath masked = nav->calculatePath(from, to, filter);
     ASSERT_EQ(masked.status, nav::PathStatus::Complete);
     EXPECT_EQ(masked.failure, nav::PathFailure::None);
-    for (const Vector3& point : samples(masked)) {
+    for (const Vector3& point : navQuerySamples(masked)) {
         nav::NavHit hit;
         ASSERT_TRUE(nav->samplePosition(point, 0.3f, hit, filter));
         EXPECT_NE(hit.area, 3) << point.toString();
