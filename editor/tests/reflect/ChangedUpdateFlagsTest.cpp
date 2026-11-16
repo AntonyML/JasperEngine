@@ -441,14 +441,14 @@ TEST(ChangedUpdateFlagsBench, AMeshCostsMicroseconds) {
     std::printf("[ bench ] a Mesh's update flags: %.2f us a call, %.2f us with its property lists (budget 50)\n", now, lists);
     EXPECT_NE(sink, 0u);
     EXPECT_LT(now * 20.0, lists);
-    if (const double slack = test::perfSlack(); slack > 0.0) {
+    if (const double slack = jasperengine::editor::test::perfSlack(); slack > 0.0) {
         EXPECT_LE(now, 50.0 * slack);
     }
 }
 
 // The other components on Stop's path: those that run update flags, with their lists filled
 TEST(ChangedUpdateFlagsBench, EveryComponentStaysUnderTheBudget) {
-    const double slack = test::perfSlack();
+    const double slack = jasperengine::editor::test::perfSlack();
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         if (desc->decodeApply != reflect::DecodeApply::UpdateFlags) continue;
         reflect::Value a(desc->body.ops);
