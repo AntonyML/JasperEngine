@@ -7,8 +7,10 @@
 // component is changed in turn and the two must agree, with fixed cases as a check of the oracle.
 
 #include "support/EditorTestSupport.h"
+#include "reflect/ReflectTestSupport.h"
 
 #include "Catalog.h"
+#include "component/CameraComponent.h"
 #include "component/MeshComponent.h"
 #include "component/ModelComponent.h"
 #include "component/ScriptComponent.h"
@@ -161,6 +163,12 @@ namespace changed_update_flags_test {
         }
     }
 
+    // a camera made here: the framebuffer its constructor allocates (a scene's registry or renderer
+    // frees a scene camera's), shared by its copies, goes with `owned`
+    void own(test::OwnedFramebuffers& owned, const reflect::ComponentDesc& desc, const reflect::Value& value) {
+        if (desc.type == ComponentType::CameraComponent) owned.keep(static_cast<const CameraComponent*>(value.get()));
+    }
+
     // every array that can grow has elements, down to the arrays in those elements
     void populate(const reflect::StructDesc& desc, void* owner) {
         for (const reflect::FieldDesc& field : desc.fields) {
@@ -279,32 +287,43 @@ namespace changed_update_flags_test {
 using namespace changed_update_flags_test;
 
 TEST(ChangedUpdateFlags, EveryPropertyOfADefaultComponent) {
+    test::OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
-        sweepEveryProperty(*desc, reflect::Value(desc->body.ops));
+        reflect::Value base(desc->body.ops);
+        own(owned, *desc, base);
+        sweepEveryProperty(*desc, base);
     }
 }
 
 TEST(ChangedUpdateFlags, EveryPropertyWithItsListsFilled) {
+    test::OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         reflect::Value base(desc->body.ops);
+        own(owned, *desc, base);
         populateAll(*desc, base.get());
         sweepEveryProperty(*desc, base);
     }
 }
 
 TEST(ChangedUpdateFlags, ListsOfDifferentLengthsCompareTheElementsBothHave) {
+    test::OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         reflect::Value empty(desc->body.ops);
         reflect::Value filled(desc->body.ops);
+        own(owned, *desc, empty);
+        own(owned, *desc, filled);
         populateAll(*desc, filled.get());
         expectAgree(desc->type, empty.get(), filled.get(), std::string(desc->cppName) + " empty against filled");
     }
 }
 
 TEST(ChangedUpdateFlags, NaNDiffersFromItself) {
+    test::OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         reflect::Value a(desc->body.ops);
         reflect::Value b(desc->body.ops);
+        own(owned, *desc, a);
+        own(owned, *desc, b);
         for (void* comp : {a.get(), b.get()}) {
             std::map<std::string, PropertyData> properties;
             reflect::listProperties(*desc, comp, properties);
@@ -318,10 +337,13 @@ TEST(ChangedUpdateFlags, NaNDiffersFromItself) {
 
 TEST(ChangedUpdateFlags, RandomPairs) {
     std::mt19937 random(51);
+    test::OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         for (int round = 0; round < 30; round++) {
             reflect::Value a(desc->body.ops);
             reflect::Value b(desc->body.ops);
+            own(owned, *desc, a);
+            own(owned, *desc, b);
             if (round % 2) populateAll(*desc, a.get());
             if (round % 3 == 0) populateAll(*desc, b.get());
             for (reflect::Value* side : {&a, &b}) {
@@ -446,9 +468,11 @@ TEST(ChangedUpdateFlagsBench, AMeshCostsMicroseconds) {
 // The other components on Stop's path: those that run update flags, with their lists filled
 TEST(ChangedUpdateFlagsBench, EveryComponentStaysUnderTheBudget) {
     const double slack = test::perfSlack();
+    test::OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         if (desc->decodeApply != reflect::DecodeApply::UpdateFlags) continue;
         reflect::Value a(desc->body.ops);
+        own(owned, *desc, a);
         populateAll(*desc, a.get());
         reflect::Value b(a);
         reflect::Value oracleA(a);

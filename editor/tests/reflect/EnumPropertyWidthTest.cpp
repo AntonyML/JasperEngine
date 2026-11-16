@@ -13,10 +13,12 @@
 #include "Project.h"
 #include "command/CommandHandle.h"
 #include "command/type/PropertyCmd.h"
+#include "component/CameraComponent.h"
 #include "component/TitleArtRendererComponent.h"
 #include "component/Transform.h"
 #include "mcp/McpValues.h"
 #include "project/ProjectPrefabInternal.h"
+#include "reflect/ReflectTestSupport.h"
 #include "reflect/Reflect.h"
 #include "support/TestTempDir.h"
 
@@ -139,8 +141,11 @@ TEST(EnumPropertyWidth, CopyCompareAndReadSeeOnlyTheEnumsByte) {
 // field's, and a write there changes no other byte of the component
 TEST(EnumPropertyWidth, EveryEnumPropertyWritesOnlyItsOwnBytes) {
     size_t narrow = 0;
+    // (a camera made here owns the framebuffer its constructor allocates)
+    OwnedFramebuffers owned;
     for (const reflect::ComponentDesc* desc : reflect::listingOrder()) {
         reflect::Value value(desc->body.ops);
+        if (desc->type == ComponentType::CameraComponent) owned.keep(static_cast<const CameraComponent*>(value.get()));
         unsigned char* begin = static_cast<unsigned char*>(value.get());
         const size_t bytes = desc->body.ops->size;
         for (const auto& [name, property] : Catalog::getProperties(desc->type, value.get())) {
