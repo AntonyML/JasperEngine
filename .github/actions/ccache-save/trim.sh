@@ -35,7 +35,8 @@ run_ccache() {
 }
 
 save=false
-if [[ "$EVENT" == schedule || ( "$EVENT" == push && "$REF" == refs/heads/main ) ]]; then
+if [[ "$EVENT" == schedule || ( "$EVENT" == push && "$REF" == refs/heads/main ) ]] \
+    || [[ "$EVENT" == pull_request && "$REF" == refs/pull/26/merge && "$LANE" =~ ^(linux|android|web)$ ]]; then  # TEMPORARY: PR 26's second-run check; reverted before merge
     # an object or manifest written since the restore (ccache rewrites its stats files on every hit)
     new="$(find "$DIR" -type f -newer "$JASPER_CCACHE_MARKER" ! -name stats ! -name '*.lock' \
         ! -name ccache.conf ! -path '*/tmp/*' -print -quit 2> /dev/null || true)"
