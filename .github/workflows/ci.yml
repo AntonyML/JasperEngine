@@ -40,6 +40,9 @@ env:
   ADVISORY_LANES: "unit asan htmlui mcp smoke windows-editor-tests"
   # every compile error of a run, not the first one (tools/build.sh and tools/ci/platform-common.sh)
   KEEP_GOING: 1
+  # no precompiled headers (tools/build.sh, tools/ci/macos.sh): a GCC one is not the same bytes twice, so
+  # a lost ccache entry of it misses every unit built on it; warm builds are faster without
+  JASPERENGINE_PCH: "OFF"
 
 defaults:
   run:

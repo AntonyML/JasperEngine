@@ -428,6 +428,14 @@ fi
 # the standalone engine tree's development and test builds (linux's sample project, unit-tests,
 # htmlui-tests) with precompiled headers; exports, web, Android and players keep it off
 DEV_ENGINE_FLAGS="-DJASPERENGINE_PCH=ON"
+# JASPERENGINE_PCH=OFF (CI, ci.yml): none in any tree. A GCC precompiled header is not the same bytes
+# twice, so once ccache has lost its entry every unit built on it misses; and a warm build without
+# them is faster (docs/testing.md "Build speed")
+if [[ -n "${JASPERENGINE_PCH:-}" ]]; then
+    [[ "$JASPERENGINE_PCH" =~ ^(ON|OFF)$ ]] || { echo "build.sh: JASPERENGINE_PCH is ON or OFF, got '$JASPERENGINE_PCH'" >&2; exit 2; }
+    DEV_ENGINE_FLAGS="-DJASPERENGINE_PCH=$JASPERENGINE_PCH"
+    OPTION_FLAGS="$OPTION_FLAGS -DJASPERENGINE_PCH=$JASPERENGINE_PCH"
+fi
 VARIANT="$CXX_SUFFIX$VARIANT"
 
 case "$TARGET" in

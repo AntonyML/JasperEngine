@@ -878,12 +878,18 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   Nothing of ours goes in a precompiled header: it would make every unit depend on it. On in the
   editor tree and in `tools/build.sh`'s Linux development and test trees; off for exports, web,
   Android and players, which therefore check that every source includes what it uses. Not on MSVC
-  (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator.
+  (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator. CI turns them
+  off everywhere (`JASPERENGINE_PCH=OFF` in `ci.yml`, which `tools/build.sh` and
+  `tools/ci/macos.sh` pass to every tree; set it to reproduce a lane exactly).
 - **ccache** needs `sloppiness = pch_defines,time_macros` to cache a unit that uses a precompiled
   header; `tools/build.sh` sets it in the Linux images (no Linux unit uses `__DATE__`/`__TIME__`).
-  A fresh tree at the same path then hits every unit, the precompiled headers' included (their
-  build is cached too, so the `.gch` the units hash is the same). In the Android image it names the
-  compiler by `--version`: the NDK is unpacked in each container, so its mtime changes every run.
+  A fresh tree at the same path then hits every unit while the cache holds the header's own entry:
+  a unit hashes the `.gch`, and two GCC builds of one header differ in their bytes, so once that
+  entry is evicted every unit built on it misses (a cache cut to 58 % of a core-tests build gave
+  15 % hits). Measured on the core-tests tree (6 CPUs, 1,900 units, host load 11-23): cold 1,403-1,575 s with
+  precompiled headers, 1,460 s without; warm 126-141 s with, 90 s without. Hence CI's `OFF`. In the
+  Android image ccache names the compiler by `--version`: the NDK is unpacked in each container, so
+  its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
