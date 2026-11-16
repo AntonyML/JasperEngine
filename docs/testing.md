@@ -881,6 +881,9 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator.
 - **ccache** needs `sloppiness = pch_defines,time_macros` to cache a unit that uses a precompiled
   header; `tools/build.sh` sets it in the Linux images (no Linux unit uses `__DATE__`/`__TIME__`).
+  A fresh tree at the same path then hits every unit, the precompiled headers' included (their
+  build is cached too, so the `.gch` the units hash is the same). In the Android image it names the
+  compiler by `--version`: the NDK is unpacked in each container, so its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
@@ -974,9 +977,13 @@ Windows jobs' builds and the core tests' run included.
   project, or is `CI_EXCLUDED`) is listed under "not run in CI"; `MCP_SUITE=all` locally covers it.
 - **Push to `main`** builds only: its tests ran in the queue. It saves the caches (ccache per lane,
   the deps dumps `changes` plans from): a PR restores what `main` saved, never what the queue did.
-  The caps (`max-size` in `ci.yml`) share GitHub's 10 GB per repository: of the Windows jobs only the
-  editor's (1.2 GB, a full editor and tests build) and OpenGL's (0.15 GB) keep one; D3D11 and Vulkan
-  build cold within the editor job's time.
+- **ccache in CI**: a build runs with no size limit (a cleanup in the middle of a build evicts the
+  restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
+  file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
+  and prints the rest, the lane's working set, on every run; on `main` it cuts that to the lane's cap
+  (`max-size` in `ci.yml`), oldest-used first, and saves it. A cap below the working set loses the
+  start of the build, not all of it. The caps share GitHub's 10 GB per repository: of the Windows jobs
+  only the editor's and OpenGL's keep one; D3D11 and Vulkan build cold within the editor job's time.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases

@@ -327,6 +327,9 @@ ENV_FLAGS+=(
 # through the header; no unit of a Linux build uses __DATE__ or __TIME__ (the web image's build
 # id does, and is not given this)
 [[ "$IMAGE_TARGET" == linux ]] && ENV_FLAGS+=(-e "CCACHE_SLOPPINESS=pch_defines,time_macros")
+# The Android Gradle plugin unpacks the NDK inside each container (the image has none), which gives its
+# compiler a new mtime, ccache's default compiler check, on every run: name it by its version instead
+[[ "$IMAGE_TARGET" == android ]] && ENV_FLAGS+=(-e "CCACHE_COMPILERCHECK=%compiler% --version")
 MOUNT_FLAGS=()
 # mcp-tests: the fixture project the default-fixture tests copy (the places
 # tools/mcp/harness.py default_fixture() looks in), mounted where the harness finds it
