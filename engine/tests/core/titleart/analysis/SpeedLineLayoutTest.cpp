@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 using namespace jasperengine;
@@ -18,8 +19,6 @@ using namespace jasperengine::titleart;
 using namespace jasperengine::titleart::analysis;
 
 namespace {
-
-    constexpr double PI = 3.14159265358979323846;
 
     // a 1920 x 1080 canvas around the layer's origin
     std::vector<TitleVec2> canvasFrame() {
@@ -229,9 +228,9 @@ TEST(SpeedLineLayoutTest, NoLargeAngularGaps) {
         std::vector<double> angles;
         for (const SpeedLine& line : lay.lines) angles.push_back(std::atan2(line.y - in.center.y, line.x - in.center.x));
         std::sort(angles.begin(), angles.end());
-        double largest = angles.front() + 2.0 * PI - angles.back();
+        double largest = angles.front() + 2.0 * std::numbers::pi - angles.back();
         for (size_t i = 1; i < angles.size(); i++) largest = std::max(largest, angles[i] - angles[i - 1]);
-        const double mean = 2.0 * PI / (double)angles.size();
+        const double mean = 2.0 * std::numbers::pi / (double)angles.size();
         EXPECT_LE(largest, 2.0 * mean) << "count " << count;
     }
 }

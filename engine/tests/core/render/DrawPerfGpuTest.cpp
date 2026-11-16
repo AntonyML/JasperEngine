@@ -43,7 +43,7 @@ namespace {
     // MESH 'Dlo' (ShaderPool::getDirectionalOnlyProperty), by its number: older engines have no name for it
     constexpr uint64_t DIRECTIONAL_ONLY_BIT = 1ull << 44;
 
-    std::vector<uint8_t> readTarget(){
+    std::vector<uint8_t> readDrawPerfTarget(){
         Framebuffer& target = GpuEnvironment::target();
         std::vector<uint8_t> rgba;
         readTexture(target.getRender().getColorTexture(), (int)target.getWidth(), (int)target.getHeight(), rgba);
@@ -109,7 +109,7 @@ namespace {
 
         // the mean luminance of the target's centre (a 20 x 20 square)
         float centreLuminance(){
-            const std::vector<uint8_t> rgba = readTarget();
+            const std::vector<uint8_t> rgba = readDrawPerfTarget();
             Framebuffer& target = GpuEnvironment::target();
             const int width = (int)target.getWidth();
             const int height = (int)target.getHeight();
@@ -266,7 +266,7 @@ TEST_F(DrawPerfGpu, DirectionalOnlyDrawsTheSameImage){
         box(-3.0f + 1.2f * (float)i, -0.5f + 0.2f * (float)i, 26.0f - 0.5f * (float)i, true).setScale(1.5f);
     settle();
     ASSERT_NE(boxes[0]->getComponent<MeshComponent>().submeshes[0].shaderProperties & DIRECTIONAL_ONLY_BIT, 0u);
-    const std::vector<uint8_t> directional = readTarget();
+    const std::vector<uint8_t> directional = readDrawPerfTarget();
     // the general variant: a point light that gives no light
     lights.push_back(std::make_unique<Light>(&scene));
     lights.back()->setType(LightType::POINT);
@@ -275,7 +275,7 @@ TEST_F(DrawPerfGpu, DirectionalOnlyDrawsTheSameImage){
     const uint64_t general = boxes[0]->getComponent<MeshComponent>().submeshes[0].shaderProperties;
     ASSERT_EQ(general & DIRECTIONAL_ONLY_BIT, 0u);
     ASSERT_EQ(general & ShaderPool::getLightingProperty(ShaderPool::LightingFeature::TILED_LIGHTS), 0u);
-    const std::vector<uint8_t> generalImage = readTarget();
+    const std::vector<uint8_t> generalImage = readDrawPerfTarget();
     ASSERT_EQ(generalImage.size(), directional.size());
     size_t differing = 0;
     for (size_t i = 0; i < generalImage.size(); i++){

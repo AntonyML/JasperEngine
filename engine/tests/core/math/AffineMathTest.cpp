@@ -34,7 +34,7 @@ namespace {
         }
     }
 
-    struct Random {
+    struct AffineRandom {
         std::mt19937 engine{1234};
         float range(float low, float high){
             return std::uniform_real_distribution<float>(low, high)(engine);
@@ -58,7 +58,7 @@ namespace {
 }
 
 TEST(AffineMath, ComposeTRSIsTheProduct){
-    Random random;
+    AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Vector3 t = random.vector(-100.0f, 100.0f);
         const Quaternion r = random.rotation();
@@ -71,7 +71,7 @@ TEST(AffineMath, ComposeTRSIsTheProduct){
 }
 
 TEST(AffineMath, AffineMultiplyIsTheProduct){
-    Random random;
+    AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Matrix4 a = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
         const Matrix4 b = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
@@ -80,7 +80,7 @@ TEST(AffineMath, AffineMultiplyIsTheProduct){
 }
 
 TEST(AffineMath, TransformAffineIsTheProduct){
-    Random random;
+    AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Matrix4 m = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
         const Vector3 v = random.vector(-20.0f, 20.0f);
@@ -89,7 +89,7 @@ TEST(AffineMath, TransformAffineIsTheProduct){
 }
 
 TEST(AffineMath, AffineInverseIsTheInverse){
-    Random random;
+    AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Matrix4 m = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
         expectClose(m.affineInverse(), m.inverse(), "affineInverse");
@@ -108,7 +108,7 @@ TEST(AffineMath, AffineInverseIsTheInverse){
 }
 
 TEST(AffineMath, Determinant3x3HasTheSignOfTheDeterminant){
-    Random random;
+    AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Matrix4 m = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
         EXPECT_EQ(m.determinant3x3() < 0.0f, m.determinant() < 0.0f);
@@ -118,7 +118,7 @@ TEST(AffineMath, Determinant3x3HasTheSignOfTheDeterminant){
 }
 
 TEST(AffineMath, AffineAABBHoldsEveryCorner){
-    Random random;
+    AffineRandom random;
     for (int i = 0; i < 200; i++){
         const Matrix4 m = Matrix4::composeTRS(random.vector(-50.0f, 50.0f), random.rotation(), random.scale());
         const Vector3 low = random.vector(-5.0f, 0.0f);

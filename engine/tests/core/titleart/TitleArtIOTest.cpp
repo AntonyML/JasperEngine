@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 namespace {
 
     std::string readFixture(const std::string& name) {
-        const fs::path path = fs::path(test::testPaths().sourceDir) / "titleart" / "fixtures" / "v1" / name;
+        const fs::path path = fs::path(jasperengine::test::testPaths().sourceDir) / "titleart" / "fixtures" / "v1" / name;
         std::ifstream file(path, std::ios::binary);
         return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     }

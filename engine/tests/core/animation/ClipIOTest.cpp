@@ -77,7 +77,7 @@ namespace {
         return result.data ? *result.data : ClipData();
     }
 
-    bool hasWarning(const std::vector<ClipWarning>& warnings, const std::string& path, const std::string& part){
+    bool ioHasWarning(const std::vector<ClipWarning>& warnings, const std::string& path, const std::string& part){
         for (const ClipWarning& warning : warnings){
             if (warning.path == path && warning.message.find(part) != std::string::npos) return true;
         }
@@ -158,8 +158,8 @@ TEST(ClipIO, CanonicalFileRoundTripsByteForByte){
     EXPECT_EQ(anim::writeClip(data), canonicalText);
     // the property track this engine cannot animate (kept verbatim) and the unknown keys are the
     // only warnings
-    EXPECT_TRUE(hasWarning(warnings, "tracks[5]", "unknown animatable property 'Light.intensity'")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "", "cycle_offset, curves")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[5]", "unknown animatable property 'Light.intensity'")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "", "cycle_offset, curves")) << listWarnings(warnings);
     EXPECT_EQ(warnings.size(), 2u) << listWarnings(warnings);
 
     ASSERT_EQ(data.tracks.size(), 7u);
@@ -261,7 +261,7 @@ TEST(ClipIO, GuidIsWrittenRightAfterVersion){
     std::vector<ClipWarning> warnings;
     ClipData noGuid = parseOk(wrapClip("\"guid\": \"XYZ\""), &warnings);
     EXPECT_TRUE(noGuid.guid.empty());
-    EXPECT_TRUE(hasWarning(warnings, "guid", "32 lowercase hex")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "guid", "32 lowercase hex")) << listWarnings(warnings);
     std::string plain = anim::writeClip(noGuid);
     ASSERT_TRUE(anim::replaceClipGuid(plain, "00112233445566778899aabbccddeeff"));
     noGuid.guid = "00112233445566778899aabbccddeeff";
@@ -293,9 +293,9 @@ TEST(ClipIO, QuaternionsNormalizeOnlyWhenOffByMoreThan1e5){
     ASSERT_EQ(data.tracks[0].keys.size(), 2u) << "the zero quaternion is dropped";
     EXPECT_FLOAT_EQ(data.tracks[0].keys[0].value[3], 0.999995f) << "within 1e-5: kept as written";
     EXPECT_FLOAT_EQ(data.tracks[0].keys[1].value[3], 1.0f);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1].value", "normalized")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[2].value", "zero quaternion")) << listWarnings(warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[0].value", "normalized"));
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1].value", "normalized")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[2].value", "zero quaternion")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[0].value", "normalized"));
     std::string text = anim::writeClip(data);
     EXPECT_NE(text.find("[0, [0, 0, 0, 0.999995]]"), std::string::npos) << text;
 
@@ -311,8 +311,8 @@ TEST(ClipIO, QuaternionsNormalizeOnlyWhenOffByMoreThan1e5){
     EXPECT_FLOAT_EQ(data.tracks[0].keys[1].value[3], 1.0f);
     EXPECT_FLOAT_EQ(data.tracks[0].keys[1].inTangent[3], 1.0f);
     EXPECT_FLOAT_EQ(data.tracks[0].keys[1].outTangent[1], 2.0f);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[0].value", "normalized")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1].value", "normalized")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[0].value", "normalized")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1].value", "normalized")) << listWarnings(warnings);
 }
 
 // The writer decides normalization on the value it writes: quaternions whose norm sits in the
@@ -429,8 +429,8 @@ TEST(ClipIO, EulerIsReadInEditAnimationsOrderAndWrittenAsQuaternions){
         Quaternion helper = anim::eulerDegreesToQuaternion(30, 90, 0);
         EXPECT_NEAR(helper.w, expected[3], 2e-6f);
         EXPECT_NEAR(helper.z, expected[2], 2e-6f);
-        EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[2].value", "more than 180 degrees on y")) << listWarnings(warnings);
-        EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[1].value", "180 degrees")) << listWarnings(warnings);
+        EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[2].value", "more than 180 degrees on y")) << listWarnings(warnings);
+        EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[1].value", "180 degrees")) << listWarnings(warnings);
     }
     Engine::setUseDegrees(degrees);
     // in degrees mode the helper is edit_animation's Quaternion(x, y, z) (McpValues::parseQuaternion)
@@ -451,13 +451,13 @@ TEST(ClipIO, EulerTurnsAreCheckedInTimeOrder){
     std::vector<ClipWarning> warnings;
     parseOk(wrapClip("\"tracks\": [{\"path\": \"\", \"channel\": \"rotation\", \"keys\": ["
                      "[1, {\"euler\": [0, 170, 0]}], [0, {\"euler\": [0, 0, 0]}], [2, {\"euler\": [0, -170, 0]}]]}]"), &warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[2].value", "more than 180 degrees on y")) << listWarnings(warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[0].value", "180 degrees")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[2].value", "more than 180 degrees on y")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[0].value", "180 degrees")) << listWarnings(warnings);
     // a quaternion key between two Euler keys breaks the pair
     warnings.clear();
     parseOk(wrapClip("\"tracks\": [{\"path\": \"\", \"channel\": \"rotation\", \"keys\": ["
                      "[0, {\"euler\": [0, 0, 0]}], [1, [0, 0, 0, 1]], [2, {\"euler\": [0, 270, 0]}]]}]"), &warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[2].value", "180 degrees")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[2].value", "180 degrees")) << listWarnings(warnings);
 }
 
 // ---- leniency (warnings with JSON paths, bad parts dropped)
@@ -484,32 +484,32 @@ TEST(ClipIO, BadKeysTracksAndEventsAreDroppedWithPaths){
     EXPECT_EQ(data.tracks[1].path, "A");
     ASSERT_EQ(data.tracks[1].keys.size(), 2u);
     EXPECT_EQ(data.tracks[1].keys[1].ease, EaseType::LINEAR);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1].value", "expected [x, y, z]")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[2].ease", "using linear")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[1].channel", "track dropped")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[2].path", "track dropped")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[3].path", "the root")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[3].keys[0].time", "key dropped")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[3].speed", "unknown key")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[4]", "track dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1].value", "expected [x, y, z]")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[2].ease", "using linear")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[1].channel", "track dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[2].path", "track dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[3].path", "the root")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[3].keys[0].time", "key dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[3].speed", "unknown key")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[4]", "track dropped")) << all;
 
     ASSERT_EQ(data.events.size(), 1u) << all;
     EXPECT_EQ(data.events[0].function, "ok");
     EXPECT_EQ(data.events[0].args.size(), MAX_ANIMATION_EVENT_ARGS);
     EXPECT_EQ(std::get<double>(data.events[0].args[1]), 2.0);
-    EXPECT_TRUE(hasWarning(warnings, "events[0].function", "not a Lua function name")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "events[1].function", "not a Lua function name")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "events[2].args[1]", "dropped")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "events[2].args", "more than 8")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "events[3].time", "event dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "events[0].function", "not a Lua function name")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "events[1].function", "not a Lua function name")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "events[2].args[1]", "dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "events[2].args", "more than 8")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "events[3].time", "event dropped")) << all;
 
     EXPECT_EQ(data.frameRate, 240.0f);
-    EXPECT_TRUE(hasWarning(warnings, "frame_rate", "outside 1..240")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "frame_rate", "outside 1..240")) << all;
     EXPECT_EQ(data.wrap, ClipWrapMode::Once);
-    EXPECT_TRUE(hasWarning(warnings, "wrap", "using once")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "wrap", "using once")) << all;
     EXPECT_FALSE(data.hasExplicitLength());
-    EXPECT_TRUE(hasWarning(warnings, "length", "automatic")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "preview.model", "ignored")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "length", "automatic")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "preview.model", "ignored")) << all;
 }
 
 TEST(ClipIO, KeysAreSortedAndCloseKeysCollapse){
@@ -523,9 +523,9 @@ TEST(ClipIO, KeysAreSortedAndCloseKeysCollapse){
     EXPECT_EQ(keys[0].value[0], 5.0f) << "the negative key moved to 0, and as the later key at 0 it won";
     EXPECT_EQ(keys[1].time, 1.0f);
     EXPECT_EQ(keys[1].value[0], 2.0f) << "the later of the two keys within 1e-6 s wins";
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[3].time", "negative")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[0]", "merged")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[3].time", "negative")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[0]", "merged")) << listWarnings(warnings);
 }
 
 TEST(ClipIO, KeysTwoMicrosecondsApartStaySeparate){
@@ -572,10 +572,10 @@ TEST(ClipIO, OverflowingAndNonFiniteNumbers){
                                      "\"events\": [{\"time\": 1, \"function\": \"f\", \"args\": [1e300]}]"), &warnings);
     ASSERT_EQ(data.tracks.size(), 1u);
     EXPECT_EQ(data.tracks[0].keys.size(), 1u) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1].value", "expected [x, y, z]")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[2].time", "key dropped")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1].value", "expected [x, y, z]")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[2].time", "key dropped")) << listWarnings(warnings);
     EXPECT_EQ(data.frameRate, 30.0f);
-    EXPECT_TRUE(hasWarning(warnings, "frame_rate", "using 30")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "frame_rate", "using 30")) << listWarnings(warnings);
     EXPECT_FALSE(data.hasExplicitLength());
     ASSERT_EQ(data.events.size(), 1u);
     EXPECT_EQ(std::get<double>(data.events[0].args[0]), 1e300) << "a double arg keeps its value";
@@ -607,18 +607,18 @@ TEST(ClipIO, MixedTangentTracksReportEachDroppedEase){
         // a step stays (a Constant segment holds the key's value: anim-properties' tangent edits)
         EXPECT_EQ(key.ease, key.time == 1.0f ? EaseType::STEP : EaseType::LINEAR);
     }
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[1].ease", "the track uses tangents")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[3].ease", "the track uses tangents")) << listWarnings(warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[2].ease", "")) << "a linear key loses nothing";
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[1].ease", "the track uses tangents")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[3].ease", "the track uses tangents")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[2].ease", "")) << "a linear key loses nothing";
 }
 
 TEST(ClipIO, UnsortedSourceTracksAreReportedThroughAMerge){
     std::vector<ClipWarning> warnings;
     parseOk(wrapClip("\"tracks\": [{\"path\": \"A\", \"channel\": \"position\", \"keys\": [[0, [0, 0, 0]], [2, [2, 0, 0]]]},"
                      "{\"path\": \"A\", \"channel\": \"position\", \"keys\": [[3, [3, 0, 0]], [1, [1, 0, 0]]]}]"), &warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[1].keys", "not sorted")) << listWarnings(warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[1]", "merged")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[1].keys", "not sorted")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[1]", "merged")) << listWarnings(warnings);
 }
 
 TEST(ClipIO, DuplicateTracksMergeWithTheLaterKeysWinning){
@@ -631,8 +631,8 @@ TEST(ClipIO, DuplicateTracksMergeWithTheLaterKeysWinning){
     ASSERT_EQ(keys.size(), 3u);
     EXPECT_EQ(keys[1].value[0], 9.0f);
     EXPECT_EQ(keys[2].time, 2.0f);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[1]", "merged")) << listWarnings(warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[1]", "merged")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
 }
 
 TEST(ClipIO, TangentsWinOverTheEase){
@@ -643,13 +643,13 @@ TEST(ClipIO, TangentsWinOverTheEase){
     ASSERT_EQ(data.tracks.size(), 1u);
     const std::vector<ClipKey>& keys = data.tracks[0].keys;
     EXPECT_EQ(keys[0].ease, EaseType::LINEAR);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[0].ease", "tangents win over the ease")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1]", "in and out tangents go together")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[0].ease", "tangents win over the ease")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1]", "in and out tangents go together")) << listWarnings(warnings);
     // the key without tangents gets the straight line's, so the track stays one cubic track
     ASSERT_TRUE(keys[1].hasTangents());
     EXPECT_FLOAT_EQ(keys[1].inTangent[0], 1.0f);
     EXPECT_FLOAT_EQ(keys[1].outTangent[0], 1.0f);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys", "linear tangents")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys", "linear tangents")) << listWarnings(warnings);
 }
 
 TEST(ClipIO, LatticePointsAreTheUnionOfTheKeys){
@@ -664,10 +664,10 @@ TEST(ClipIO, LatticePointsAreTheUnionOfTheKeys){
     EXPECT_EQ(track.keys[0].value, (std::vector<float>{0, 0, 0, 0, 1, 0, 1, 0, 0}));
     EXPECT_EQ(track.keys[1].value, (std::vector<float>{0, 0, 3, 0, 4, 0, 0, 0, 0}));
     std::string all = listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[0]", "point 7 missing, using 0")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1]", "point 20 missing, using 0")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1].value.points[2]", "point dropped")) << all;
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[1].value.points[3]", "listed twice")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[0]", "point 7 missing, using 0")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1]", "point 20 missing, using 0")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1].value.points[2]", "point dropped")) << all;
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[1].value.points[3]", "listed twice")) << all;
 
     // the writer lists every point in every key
     std::string text = anim::writeClip(data);
@@ -688,8 +688,8 @@ TEST(ClipIO, MorphWeightsArePaddedAndClamped){
     EXPECT_EQ(keys[0].value, (std::vector<float>{0.5f, 0, 0, 0, 0, 0, 0, 0}));
     EXPECT_EQ(keys[1].value.size(), (size_t)MAX_MORPHTARGETS);
     EXPECT_EQ(keys[2].value, (std::vector<float>{0, 1, 2, 3, 4, 5, 6, 7}));
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys[2].value", "more than 8")) << listWarnings(warnings);
-    EXPECT_FALSE(hasWarning(warnings, "tracks[0].keys[0].value", "")) << "shorter arrays mean 0 for the rest";
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys[2].value", "more than 8")) << listWarnings(warnings);
+    EXPECT_FALSE(ioHasWarning(warnings, "tracks[0].keys[0].value", "")) << "shorter arrays mean 0 for the rest";
 }
 
 TEST(ClipIO, NormalizeRestoresTheInvariantsOfHandBuiltData){
@@ -718,9 +718,9 @@ TEST(ClipIO, NormalizeRestoresTheInvariantsOfHandBuiltData){
     EXPECT_FALSE(data.tracks[1].relative);
     EXPECT_EQ(data.tracks[1].keys[0].time, 0.0f);
     EXPECT_EQ(data.tracks[1].keys[1].value, (std::vector<float>{1, 0, 0}));
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].relative", "only position, rotation and scale")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "wrap", "using \"once\"")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].relative", "only position, rotation and scale")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0].keys", "not sorted")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "wrap", "using \"once\"")) << listWarnings(warnings);
 }
 
 TEST(ClipIO, UnknownKeysArePreservedInFileOrder){
@@ -819,8 +819,8 @@ TEST(ClipIO, PropertyTracksAreKeptAndFollowPathEdits){
     ClipData data = parseOk(wrapClip("\"tracks\": [{\"path\": \"Lamp\", \"channel\": \"property\", \"component\": \"Light\", "
                                      "\"property\": \"intensity\", \"keys\": [[0, 1], [1, 2]], \"future\": {\"x\": 1}}]"), &warnings);
     ASSERT_EQ(data.tracks.size(), 1u);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0]", "kept in the file, not played")) << listWarnings(warnings);
-    EXPECT_TRUE(hasWarning(warnings, "tracks[0]", "did you mean 'light'")) << "component keys are lowercase: " << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0]", "kept in the file, not played")) << listWarnings(warnings);
+    EXPECT_TRUE(ioHasWarning(warnings, "tracks[0]", "did you mean 'light'")) << "component keys are lowercase: " << listWarnings(warnings);
     EXPECT_EQ(data.findTrack("Lamp", ClipChannel::Property), -1) << "findTrack never returns property tracks";
     std::string text = anim::writeClip(data);
     EXPECT_NE(text.find("    {\"path\":\"Lamp\",\"channel\":\"property\",\"component\":\"Light\",\"property\":\"intensity\","

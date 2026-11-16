@@ -61,7 +61,7 @@ namespace {
         return os << c.name;
     }
 
-    std::vector<uint8_t> readTarget(){
+    std::vector<uint8_t> readTextureLobeMapTarget(){
         Framebuffer& target = GpuEnvironment::target();
         std::vector<uint8_t> rgba;
         readTexture(target.getRender().getColorTexture(), (int)target.getWidth(), (int)target.getHeight(), rgba);
@@ -69,7 +69,7 @@ namespace {
     }
 
     // mean over the pixels of the largest channel difference (0..255)
-    double meanDifference(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
+    double lobeMeanDifference(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
         if (a.size() != b.size() || a.empty())
             return 255.0;
         double sum = 0.0;
@@ -219,7 +219,7 @@ namespace {
                 return current->getSystem<RenderSystem>()->isAllLoaded();
             })) << "the scene never finished loading";
             GpuEnvironment::drawFrames(3);
-            return readTarget();
+            return readTextureLobeMapTarget();
         }
     };
 
@@ -238,8 +238,8 @@ TEST_P(TextureLobeMapGpu, AMaterialWithOnlyALobesMapBindsIt){
     const std::vector<uint8_t> mapAlone = draw(lobeMaterial(c.lobe, id));
 
     // (a transmission on its own shows the background the map's half takes away)
-    ASSERT_GT(meanDifference(reference, noMap), 0.5) << c.name << ": the map changes nothing (the case shows nothing)";
-    EXPECT_LT(meanDifference(mapAlone, reference), 0.25) << c.name << ": the lobe's map alone does not draw as with a core map beside it";
+    ASSERT_GT(lobeMeanDifference(reference, noMap), 0.5) << c.name << ": the map changes nothing (the case shows nothing)";
+    EXPECT_LT(lobeMeanDifference(mapAlone, reference), 0.25) << c.name << ": the lobe's map alone does not draw as with a core map beside it";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -252,7 +252,7 @@ TEST_P(TextureLobeMapGpu, AMapGivenToALoadedMaterialAndTakenAwayIsDrawnThenGone)
     registerSplitImage(id, c.changed, c.plain);
     const std::vector<uint8_t> withMap = draw(lobeMaterial(c.lobe, id));
     const std::vector<uint8_t> noMap = draw(lobeMaterial(c.lobe, ""));
-    ASSERT_GT(meanDifference(withMap, noMap), 0.5) << c.name << ": the map changes nothing (the case shows nothing)";
+    ASSERT_GT(lobeMeanDifference(withMap, noMap), 0.5) << c.name << ": the map changes nothing (the case shows nothing)";
 
     Primitive plane(&scene);
     plane.createPlane(3.0f, 3.0f);
@@ -263,7 +263,7 @@ TEST_P(TextureLobeMapGpu, AMapGivenToALoadedMaterialAndTakenAwayIsDrawnThenGone)
             return current->getSystem<RenderSystem>()->isAllLoaded();
         })) << "the scene never finished loading";
         GpuEnvironment::drawFrames(3);
-        return readTarget();
+        return readTextureLobeMapTarget();
     };
     settledFrame();
 
@@ -284,9 +284,9 @@ TEST_P(TextureLobeMapGpu, AMapGivenToALoadedMaterialAndTakenAwayIsDrawnThenGone)
         submesh.needUpdateTexture = true;
     };
     setMap(namedTexture(id));
-    EXPECT_LT(meanDifference(settledFrame(), withMap), 0.25) << c.name << ": the map given to the loaded material is not drawn";
+    EXPECT_LT(lobeMeanDifference(settledFrame(), withMap), 0.25) << c.name << ": the map given to the loaded material is not drawn";
     setMap(Texture());
-    EXPECT_LT(meanDifference(settledFrame(), noMap), 0.25) << c.name << ": the map taken away still draws";
+    EXPECT_LT(lobeMeanDifference(settledFrame(), noMap), 0.25) << c.name << ": the map taken away still draws";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -350,7 +350,7 @@ TEST(TextureLobeMapEnvironmentGpu, ALobesMapAloneIsBoundUnderImageBasedLightingA
         // (ShaderPool::getMeshProperties: 'Ibl')
         EXPECT_NE(scene.getComponent<MeshComponent>(plane.getEntity()).submeshes[0].shaderProperties & (1u << 19), 0u) << "the sky does not light the plane";
         GpuEnvironment::drawFrames(3);
-        return readTarget();
+        return readTextureLobeMapTarget();
     };
 
     Material withWhite = lobeMaterial(Lobe::Clearcoat, "bf17-map|ibl");
@@ -369,10 +369,10 @@ TEST(TextureLobeMapEnvironmentGpu, ALobesMapAloneIsBoundUnderImageBasedLightingA
     addWhiteBaseColor(plain);
     const std::vector<uint8_t> withCoreMap = draw(plain);
     Engine::removeScene(&scene);
-    EXPECT_LT(meanDifference(withCoreMap, factors), 0.25) << "a white base colour image changes the surface under image based lighting alone";
+    EXPECT_LT(lobeMeanDifference(withCoreMap, factors), 0.25) << "a white base colour image changes the surface under image based lighting alone";
 
-    ASSERT_GT(meanDifference(reference, noMap), 0.5) << "the map changes nothing (the case shows nothing)";
-    EXPECT_LT(meanDifference(mapAlone, reference), 0.25) << "the lobe's map alone does not draw as with a core map beside it";
+    ASSERT_GT(lobeMeanDifference(reference, noMap), 0.5) << "the map changes nothing (the case shows nothing)";
+    EXPECT_LT(lobeMeanDifference(mapAlone, reference), 0.25) << "the lobe's map alone does not draw as with a core map beside it";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -434,7 +434,7 @@ TEST_P(CoreMapEnvironmentGpu, ACoreMapAloneIsBoundUnderImageBasedLightingAlone){
         // (ShaderPool::getMeshProperties: 'Ibl')
         EXPECT_NE(scene.getComponent<MeshComponent>(plane.getEntity()).submeshes[0].shaderProperties & (1u << 19), 0u) << "the sky does not light the plane";
         GpuEnvironment::drawFrames(3);
-        return readTarget();
+        return readTextureLobeMapTarget();
     };
 
     Material plain;
@@ -453,8 +453,8 @@ TEST_P(CoreMapEnvironmentGpu, ACoreMapAloneIsBoundUnderImageBasedLightingAlone){
     const std::vector<uint8_t> alone = draw(mapAlone);
     Engine::removeScene(&scene);
 
-    ASSERT_GT(meanDifference(reference, noMap), 0.5) << "the map changes nothing (the case shows nothing)";
-    EXPECT_LT(meanDifference(alone, reference), 0.25) << "the map alone does not draw as with a base colour image beside it";
+    ASSERT_GT(lobeMeanDifference(reference, noMap), 0.5) << "the map changes nothing (the case shows nothing)";
+    EXPECT_LT(lobeMeanDifference(alone, reference), 0.25) << "the map alone does not draw as with a base colour image beside it";
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -559,15 +559,15 @@ TEST(TextureLobeMapGltfGpu, ALobesMapAloneOfAModelReadsItsUvSet){
             return current->getSystem<RenderSystem>()->isAllLoaded();
         })) << "the scene never finished loading";
         GpuEnvironment::drawFrames(3);
-        return readTarget();
+        return readTextureLobeMapTarget();
     };
     const std::vector<uint8_t> reference = draw(withWhite);
     const std::vector<uint8_t> firstSet = draw(first);
     const std::vector<uint8_t> mapAlone = draw(alone);
     Engine::removeScene(&scene);
 
-    ASSERT_GT(meanDifference(reference, firstSet), 0.5) << "the UV sets draw alike (the case shows nothing)";
-    EXPECT_LT(meanDifference(mapAlone, reference), 0.25) << "the lobe's map alone does not read its UV set";
+    ASSERT_GT(lobeMeanDifference(reference, firstSet), 0.5) << "the UV sets draw alike (the case shows nothing)";
+    EXPECT_LT(lobeMeanDifference(mapAlone, reference), 0.25) << "the lobe's map alone does not read its UV set";
     EXPECT_NO_ENGINE_ERRORS();
 }
 

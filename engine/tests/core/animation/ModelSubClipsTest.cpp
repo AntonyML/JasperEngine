@@ -189,7 +189,7 @@ namespace {
         }
     };
 
-    bool hasWarning(const std::vector<ClipWarning>& warnings, const std::string& path, const std::string& text){
+    bool subClipHasWarning(const std::vector<ClipWarning>& warnings, const std::string& path, const std::string& text){
         for (const ClipWarning& warning : warnings){
             if (warning.path == path && warning.message.find(text) != std::string::npos) return true;
         }
@@ -559,16 +559,16 @@ TEST(ModelSubClips, RejectsBadChannelsWithWarnings){
     ASSERT_EQ(clip.tracks.size(), 1u) << "the two good translation channels merge into one track";
     EXPECT_EQ(clip.tracks[0].path, "Root");
     const std::string c = "animations[0].channels[";
-    EXPECT_TRUE(hasWarning(warnings, c + "1]", "sparse")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "2]", "past the end")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "3]", "expected VEC4")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "4]", "not animatable")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "5]", "no node")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "6]", "can't address")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "7]", "float expected")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "8]", "expected 6")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "9]", "sampler 42")) << describe(warnings);
-    EXPECT_TRUE(hasWarning(warnings, c + "10]", "QUADRATIC")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "1]", "sparse")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "2]", "past the end")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "3]", "expected VEC4")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "4]", "not animatable")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "5]", "no node")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "6]", "can't address")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "7]", "float expected")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "8]", "expected 6")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "9]", "sampler 42")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, c + "10]", "QUADRATIC")) << describe(warnings);
 
     // nothing readable: an error, not an empty clip
     GltfBuilder empty;
@@ -578,7 +578,7 @@ TEST(ModelSubClips, RejectsBadChannelsWithWarnings){
     warnings.clear();
     EXPECT_FALSE(anim::buildSubClip(empty.model, only, clip, warnings, &error));
     EXPECT_NE(error.find("Animation 0"), std::string::npos) << error;
-    EXPECT_TRUE(hasWarning(warnings, "animations[0].channels[0]", "does not exist")) << describe(warnings);
+    EXPECT_TRUE(subClipHasWarning(warnings, "animations[0].channels[0]", "does not exist")) << describe(warnings);
     EXPECT_FALSE(anim::buildSubClip(empty.model, 1, clip, warnings, &error));
     EXPECT_FALSE(anim::buildSubClip(empty.model, -1, clip, warnings, &error));
 }
@@ -601,7 +601,7 @@ TEST(ModelSubClips, UnaddressableNamesFollowClipBinding){
     ASSERT_EQ(clip.tracks.size(), 1u) << describe(warnings);
     EXPECT_EQ(clip.tracks[0].path, "Take #b");
     for (int i = 0; i < 3; i++){
-        EXPECT_TRUE(hasWarning(warnings, "animations[0].channels[" + std::to_string(i) + "]", "can't address"))
+        EXPECT_TRUE(subClipHasWarning(warnings, "animations[0].channels[" + std::to_string(i) + "]", "can't address"))
             << names[i] << "\n" << describe(warnings);
     }
 }

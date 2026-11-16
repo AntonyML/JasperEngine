@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "AnimTestEnvironment.h"
+#include "AnimatorTestUtil.h"
 #include "../pose/TestRigs.h"
 
 #include "Engine.h"
@@ -41,6 +42,7 @@
 #include <string>
 
 using namespace jasperengine;
+using namespace animatortest;
 
 namespace {
 
@@ -56,21 +58,6 @@ namespace {
     Quaternion rotation(float degrees, float ax, float ay, float az){
         std::vector<float> q = axisAngle(degrees, ax, ay, az);
         return quaternionFromXYZW(q.data());
-    }
-
-    ClipKey key(float time, std::vector<float> value){
-        ClipKey k;
-        k.time = time;
-        k.value = std::move(value);
-        return k;
-    }
-
-    ClipTrackData track(const std::string& path, ClipChannel channel, std::vector<ClipKey> keys){
-        ClipTrackData t;
-        t.path = path;
-        t.channel = channel;
-        t.keys = std::move(keys);
-        return t;
     }
 
     // walk: Leg x 0 -> 2 and Arm 0 -> 90 degrees about Z over 1 s
@@ -89,13 +76,6 @@ namespace {
         data.tracks = {track("Arm", ClipChannel::Rotation, {key(0, axisAngle(45, 1, 0, 0)), key(length, axisAngle(45, 1, 0, 0))}),
                        track("Arm/Hand", ClipChannel::Position, {key(0, {0, 1, 0}), key(length, {0, 1, 0})})};
         return data;
-    }
-
-    ClipEventData event(float time, const std::string& function){
-        ClipEventData e;
-        e.time = time;
-        e.function = function;
-        return e;
     }
 
     float quatDot(const Quaternion& a, const Quaternion& b){

@@ -56,7 +56,7 @@ using namespace jasperengine::test;
 
 namespace {
 
-    std::vector<uint8_t> readTarget(){
+    std::vector<uint8_t> readShadowPcssGlesTarget(){
         Framebuffer& target = GpuEnvironment::target();
         std::vector<uint8_t> rgba;
         readTexture(target.getRender().getColorTexture(), (int)target.getWidth(), (int)target.getHeight(), rgba);
@@ -241,7 +241,7 @@ namespace {
             constexpr int frames = 10;
             const auto start = std::chrono::steady_clock::now();
             GpuEnvironment::drawFrames(frames);
-            readTarget();
+            readShadowPcssGlesTarget();
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames;
         }
 
@@ -257,12 +257,12 @@ TEST_F(ShadowPcssGlesGpu, GlesProgramsDrawTheDesktopContactHardening){
     build();
     scene.setShadowQuality(ShadowQuality::HIGH);
     settle();
-    const std::vector<uint8_t> high = readTarget();
+    const std::vector<uint8_t> high = readShadowPcssGlesTarget();
     const double highMs = frameMs();
 
     scene.setShadowQuality(ShadowQuality::ULTRA);
     settle();
-    const std::vector<uint8_t> desktop = readTarget();
+    const std::vector<uint8_t> desktop = readShadowPcssGlesTarget();
     const double desktopMs = frameMs();
     // the floor's program: a variant of the built-in Lit, whose "builtin:lit#..." reference (its
     // Lit Quality) is a custom shader id
@@ -323,7 +323,7 @@ TEST_F(ShadowPcssGlesGpu, GlesProgramsDrawTheDesktopContactHardening){
     ASSERT_EQ(floorVariant(), variant);
     ASSERT_EQ(boxes.front()->getComponent<MeshComponent>().submeshes[0].shader.get(), glesProgram.get())
         << "the floor draws another program than the GLES3 one";
-    const std::vector<uint8_t> gles = readTarget();
+    const std::vector<uint8_t> gles = readShadowPcssGlesTarget();
     const double glesMs = frameMs();
     glesProgram.reset();
 
@@ -347,10 +347,10 @@ TEST_F(ShadowPcssGlesGpu, PaintedTerrainTakesContactHardening){
     buildTerrain(dir);
     scene.setShadowQuality(ShadowQuality::HIGH);
     settle();
-    const std::vector<uint8_t> high = readTarget();
+    const std::vector<uint8_t> high = readShadowPcssGlesTarget();
     scene.setShadowQuality(ShadowQuality::ULTRA);
     settle();
-    const std::vector<uint8_t> ultra = readTarget();
+    const std::vector<uint8_t> ultra = readShadowPcssGlesTarget();
     const uint64_t properties = terrain->getComponent<MeshComponent>().submeshes[0].shaderProperties;
     ASSERT_NE(properties & shaderPropertyBit(27), 0u) << "the terrain does not draw its painted ('Tpb') variant";
     ASSERT_NE(properties & ShaderPool::getShadowsHQProperty(), 0u);
@@ -403,7 +403,7 @@ TEST_F(ShadowPcssGlesGpu, HeaviestPaintedTerrainStaysWithinTheBindSlots){
     EXPECT_LE(bindings.fragmentTextures, 16u) << bindings.name << ": over 16 fragment texture units";
     EXPECT_TRUE(ShaderPool::get(ShaderType::MESH, properties, submesh.customShaderId)->isCreated()) << bindings.name << " was not created";
     // the terrain is drawn: the centre is its floor (grey, lit by the blue sky), not the sky (60 90 200)
-    const std::vector<uint8_t> image = readTarget();
+    const std::vector<uint8_t> image = readShadowPcssGlesTarget();
     keep(image, "shadow_pcss_terrain_heaviest");
     Framebuffer& target = GpuEnvironment::target();
     const uint8_t* centre = image.data() + ((size_t)(target.getHeight() / 2) * target.getWidth() + target.getWidth() / 2) * 4;

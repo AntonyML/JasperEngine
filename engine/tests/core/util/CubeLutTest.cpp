@@ -44,7 +44,7 @@ namespace {
     }
 
     std::string fixturePath(const char* name){
-        return test::testPaths().assetDir + "/cubelut/" + name;
+        return jasperengine::test::testPaths().assetDir + "/cubelut/" + name;
     }
 
     std::string readText(const std::string& path){
@@ -543,7 +543,7 @@ TEST(CubeLut, JlutRoundTrip){
 // loadColorLut reads through the engine's io (absolute paths here), a .cube's cooked sibling
 // first; the cache parses once per path until invalidated
 TEST(CubeLut, LoadsFilesAndCaches){
-    const test::TempDir dir;
+    const jasperengine::test::TempDir dir;
     const std::string text = cubeText("ACEScct look", 9, logLook);
     const std::filesystem::path cubePath = dir.path() / "look.cube";
     writeBytes(cubePath, text.data(), text.size());
@@ -621,7 +621,7 @@ TEST(CubeLutBench, Bake32){
 }
 
 TEST(CubeLutBench, LoadJlut){
-    const test::TempDir dir;
+    const jasperengine::test::TempDir dir;
     CubeLut cube;
     std::string error;
     ASSERT_TRUE(parseCubeLut(cubeText("Display look", 65, displayLook), cube, error)) << error;

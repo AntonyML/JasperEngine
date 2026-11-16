@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include "AnimTestEnvironment.h"
+#include "AnimatorTestUtil.h"
 
 #include "Engine.h"
 #include "Scene.h"
@@ -46,18 +47,12 @@
 #include <cmath>
 
 using namespace jasperengine;
+using namespace animatortest;
 
 namespace {
 
-    ClipKey key(float time, std::vector<float> value){
-        ClipKey k;
-        k.time = time;
-        k.value = std::move(value);
-        return k;
-    }
-
     // Leg x goes 0 -> x over `length` seconds
-    ClipData slide(float x, float length = 1.0f, ClipWrapMode wrap = ClipWrapMode::Loop){
+    ClipData legSlide(float x, float length = 1.0f, ClipWrapMode wrap = ClipWrapMode::Loop){
         ClipData data;
         data.wrap = wrap;
         ClipTrackData track;
@@ -69,7 +64,7 @@ namespace {
     }
 
     ClipData still(float x, float length = 1.0f, ClipWrapMode wrap = ClipWrapMode::Loop){
-        ClipData data = slide(x, length, wrap);
+        ClipData data = legSlide(x, length, wrap);
         data.tracks[0].keys[0].value = {x, 0, 0};
         return data;
     }
@@ -162,7 +157,7 @@ namespace {
            "has_exit_time": false, "duration": 0.15},
           {"from": "Idle", "to": "Watering", "conditions": [{"parameter": "Watering", "mode": "if"}], "has_exit_time": false}]}]})";
 
-    bool hasWarning(const std::vector<ClipWarning>& warnings, const std::string& path, const std::string& text){
+    bool controllerHasWarning(const std::vector<ClipWarning>& warnings, const std::string& path, const std::string& text){
         for (const ClipWarning& warning : warnings){
             if (warning.path == path && warning.message.find(text) != std::string::npos) return true;
         }
@@ -211,7 +206,7 @@ TEST(ControllerIO, UpstreamControllerConvertsCanonicalAndLenient){
     EXPECT_EQ(data.layers[1].blending, AnimatorLayerBlending::Additive);
     EXPECT_EQ(data.layers[1].mask.path, "arm.mask");
     EXPECT_FLOAT_EQ(data.layers[1].weight, 0.5f);
-    EXPECT_TRUE(hasWarning(parsed.warnings, "layers[0].transitions[2].from", ""));
+    EXPECT_TRUE(controllerHasWarning(parsed.warnings, "layers[0].transitions[2].from", ""));
 
     // saved as version 2: canonical, every upstream member kept
     const std::string canonical = anim::writeController(data);
@@ -241,9 +236,9 @@ TEST(ControllerValidation, ReportsTheGranjeroPortsBugs){
         info.loops = clip != "watering.anim";
         return info;
     });
-    EXPECT_TRUE(hasWarning(warnings, "layers[0].state_machine.states[2]", "dead end")) << "Watering: no way out, its clip does not loop";
-    EXPECT_TRUE(hasWarning(warnings, "parameters[2]", "unused"));
-    EXPECT_FALSE(hasWarning(warnings, "parameters[0]", "unused"));
+    EXPECT_TRUE(controllerHasWarning(warnings, "layers[0].state_machine.states[2]", "dead end")) << "Watering: no way out, its clip does not loop";
+    EXPECT_TRUE(controllerHasWarning(warnings, "parameters[2]", "unused"));
+    EXPECT_FALSE(controllerHasWarning(warnings, "parameters[0]", "unused"));
 
     anim::ControllerDef data = parsed.data;
     anim::StateMachineDef& machine = data.layers[0].machine;
@@ -264,15 +259,15 @@ TEST(ControllerValidation, ReportsTheGranjeroPortsBugs){
         info.error = "cannot read";
         return info;
     });
-    EXPECT_TRUE(hasWarning(warnings, "layers[0].state_machine.states[0].transitions[0].conditions[0].mode", "does not fit the float parameter"));
+    EXPECT_TRUE(controllerHasWarning(warnings, "layers[0].state_machine.states[0].transitions[0].conditions[0].mode", "does not fit the float parameter"));
     bool unknown = false;
     for (const ClipWarning& warning : warnings) unknown = unknown || warning.message.find("\"Nope\"") != std::string::npos;
     EXPECT_TRUE(unknown) << "an unknown parameter";
-    EXPECT_TRUE(hasWarning(warnings, "layers[0].state_machine.states[1].transitions[1]", "never taken"));
+    EXPECT_TRUE(controllerHasWarning(warnings, "layers[0].state_machine.states[1].transitions[1]", "never taken"));
     bool unreachable = false;
     for (const ClipWarning& warning : warnings) unreachable = unreachable || warning.message.find("\"Base Layer.Lonely\" is unreachable") != std::string::npos;
     EXPECT_TRUE(unreachable);
-    EXPECT_TRUE(hasWarning(warnings, "layers[0].state_machine.states[3].motion.clip", "does not load"));
+    EXPECT_TRUE(controllerHasWarning(warnings, "layers[0].state_machine.states[3].motion.clip", "does not load"));
 }
 
 TEST_F(Controllers, FixedDurationTransitionsBlendLinearly){
@@ -399,8 +394,8 @@ TEST_F(Controllers, NextStateInterruption){
 }
 
 TEST_F(Controllers, BlendTreesWeightChildrenAndSyncTheirTime){
-    clip("walk", slide(2, 1.0f));
-    clip("run", slide(4, 0.5f));
+    clip("walk", legSlide(2, 1.0f));
+    clip("run", legSlide(4, 0.5f));
     AnimationPlayer object = player(controller("tree", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "Speed", "type": "float", "default": 1}],
       "layers": [{"name": "Base Layer", "states": [{"name": "Move", "blend_tree": {"parameter": "Speed", "children": [
@@ -432,9 +427,9 @@ TEST_F(Controllers, BlendTreesWeightChildrenAndSyncTheirTime){
 }
 
 TEST_F(Controllers, EventsFireFromTheHeaviestChildOnly){
-    ClipData walk = slide(2, 1.0f);
+    ClipData walk = legSlide(2, 1.0f);
     walk.events = {ClipEventData{0.5f, "onStep", {AnimationEvent::stringArg("walk")}}};
-    ClipData run = slide(4, 1.0f);
+    ClipData run = legSlide(4, 1.0f);
     run.events = {ClipEventData{0.5f, "onStep", {AnimationEvent::stringArg("run")}}};
     clip("walk", walk);
     clip("run", run);
@@ -691,7 +686,7 @@ TEST_F(Controllers, OrderedInterruptionFromTheCurrentState){
 
 TEST_F(Controllers, DurationsOffsetsSpeedsAndIntConditions){
     clip("a", still(1, 2.0f));
-    clip("b", slide(10, 1.0f));
+    clip("b", legSlide(10, 1.0f));
     AnimationPlayer object = player(controller("timing", R"({"format": "jasperengine.controller", "version": 1,
       "parameters": [{"name": "N", "type": "int"}, {"name": "Rate", "type": "float", "default": 2}],
       "layers": [{"name": "Base Layer", "states": [{"name": "A", "clip": "@a.anim"},

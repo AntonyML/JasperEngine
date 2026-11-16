@@ -36,7 +36,7 @@ namespace {
     constexpr const char* TITLE = "00000001";
     constexpr const char* GENERATOR = "00000301";
     constexpr float SCALE = 0.25f;
-    constexpr uint32_t UNLIMITED = 1000000000u;
+    constexpr uint32_t FXLIVE_UNLIMITED = 1000000000u;
 
     // the document of one definition: the standard title with the effect, or the generator's
     // first preset over (following) it; its L param exposed as "p"
@@ -109,7 +109,7 @@ namespace {
         }
     }
 
-    Pixels frontPixels(const TitleArtLive& live) {
+    Pixels fxLiveFrontPixels(const TitleArtLive& live) {
         const TitleDisplayImage& front = live.front();
         Pixels out;
         out.width = front.width;
@@ -137,7 +137,7 @@ namespace {
         static double clock = 0.0;
         TitleScheduleContext context;
         context.factory = factory;
-        context.budgetUs = UNLIMITED;
+        context.budgetUs = FXLIVE_UNLIMITED;
         const auto start = std::chrono::steady_clock::now();
         int n = 0;
         while (live.hasWork() && n < maxFrames && std::chrono::steady_clock::now() - start < std::chrono::minutes(3)) {
@@ -221,7 +221,7 @@ namespace {
                 const Pixels expected = rerender(c, overrides, fullPasses);
                 if (skips) EXPECT_LT(livePasses, fullPasses) << "the live frame runs the live effect and what is above it, not the title";
                 else EXPECT_LE(livePasses, fullPasses);
-                const Difference d = compare(frontPixels(live), expected);
+                const Difference d = compare(fxLiveFrontPixels(live), expected);
                 // S83 §6.5: F0 for scale_split, F1 for kernels
                 EXPECT_LE(d.mean, c.scaleSplit ? 1.0 : 1.5);
                 EXPECT_LE(d.max, c.scaleSplit ? 48.0 : 64.0);
@@ -292,7 +292,7 @@ TEST_F(TitleFxLiveGpu, S58MinimumSet) {
             EXPECT_TRUE(live.status().liveFallback.empty()) << live.status().liveFallback;
             if (frame == 4) {
                 uint64_t passes = 0;
-                const Difference d = compare(frontPixels(live), rerender(c, overrides, passes));
+                const Difference d = compare(fxLiveFrontPixels(live), rerender(c, overrides, passes));
                 EXPECT_LE(d.mean, 1.5);
                 EXPECT_LE(d.max, 64.0);
                 EXPECT_LE(d.overFraction, 0.02);

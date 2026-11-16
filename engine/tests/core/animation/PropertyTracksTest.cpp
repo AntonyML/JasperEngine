@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "AnimTestEnvironment.h"
+#include "AnimatorTestUtil.h"
 
 #include "Engine.h"
 #include "Scene.h"
@@ -53,16 +54,9 @@
 #include <thread>
 
 using namespace jasperengine;
+using namespace animatortest;
 
 namespace {
-
-    ClipKey key(float time, std::vector<float> value, EaseType ease = EaseType::LINEAR){
-        ClipKey k;
-        k.time = time;
-        k.value = std::move(value);
-        k.ease = ease;
-        return k;
-    }
 
     ClipTrackData property(const std::string& path, const std::string& component, const std::string& name, std::vector<ClipKey> keys){
         ClipTrackData t;
@@ -74,14 +68,7 @@ namespace {
         return t;
     }
 
-    ClipEventData event(float time, const std::string& function){
-        ClipEventData e;
-        e.time = time;
-        e.function = function;
-        return e;
-    }
-
-    bool hasWarning(const std::vector<ClipWarning>& warnings, const std::string& part){
+    bool trackHasWarning(const std::vector<ClipWarning>& warnings, const std::string& part){
         for (const ClipWarning& warning : warnings){
             if (warning.message.find(part) != std::string::npos) return true;
         }
@@ -244,7 +231,7 @@ TEST(PropertyClipIO, EveryKindParsesAndWritesCanonically){
     const ClipTrackData& width = data.tracks[2];
     EXPECT_EQ(width.kind, PropertyKind::Int);
     EXPECT_FLOAT_EQ(width.keys[1].value[0], 200.0f) << "a fractional int rounds";
-    EXPECT_TRUE(hasWarning(parsed.warnings, "not a whole number"));
+    EXPECT_TRUE(trackHasWarning(parsed.warnings, "not a whole number"));
     const ClipTrackData& alpha = data.tracks[3];
     EXPECT_EQ(alpha.width, 1u);
     EXPECT_EQ(alpha.swizzle, 3);
@@ -303,7 +290,7 @@ TEST(PropertyClipIO, HexColoursEasesOnBoolsAndUnknownTracks){
         "    {\"path\":\"Fx\",\"channel\":\"property\",\"component\":\"particlecollider\",\"property\":\"bounce\",\"keys\":[[0,1]]}");
     anim::ClipParseResult kept = anim::parseClip(unknown);
     ASSERT_TRUE(kept.ok());
-    EXPECT_TRUE(hasWarning(kept.warnings, "unknown animatable property 'light.fooBar' (did you mean"));
+    EXPECT_TRUE(trackHasWarning(kept.warnings, "unknown animatable property 'light.fooBar' (did you mean"));
     EXPECT_FALSE(kept.data->tracks[0].known);
     const std::string canonical = anim::writeClip(*kept.data);
     anim::ClipParseResult reread = anim::parseClip(canonical);

@@ -48,7 +48,7 @@ namespace {
                         {"scene_3d", {{"supersample", 1}, {"environment", {{"preset", "softbox"}, {"rotation", 25}}}}}});
     }
 
-    std::string bundledHdriDir() {
+    std::string cookedBundledHdriDir() {
         return (std::filesystem::path(jasperengine::test::testPaths().sourceDir) / ".." / ".." / ".." / "editor" / "resources" / "titleart" / "hdri")
             .lexically_normal()
             .string();
@@ -59,7 +59,7 @@ namespace {
             setTitleHdriLoader(nullptr);
             return;
         }
-        const std::string dir = bundledHdriDir();
+        const std::string dir = cookedBundledHdriDir();
         setTitleHdriLoader([dir](const std::string& slug) { return loadTitleHdriFromDirectory(slug, dir); });
     }
 
@@ -103,7 +103,7 @@ namespace {
         env.preset = "softbox";
         const TitleEnvScene* scene = titleEnvironmentPreset("softbox");
         const std::shared_ptr<const TitleHdri> hdri = loadTitleHdri(scene->hdri);
-        EXPECT_TRUE(hdri) << "the bundled Studio Small 09 at " << bundledHdriDir();
+        EXPECT_TRUE(hdri) << "the bundled Studio Small 09 at " << cookedBundledHdriDir();
         const TitleEnvCube cube = buildTitleEnvironmentCpu(*scene, hdri.get(), titleHdriYaw("softbox"), titleEnvironmentFace(env, 1.0, TitleTier::High));
         std::vector<uint8_t> ktx2;
         std::string error;

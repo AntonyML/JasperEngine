@@ -36,7 +36,7 @@ namespace {
     }
 
     // a filled square polygon centred at (cx, cy)
-    Path square(double cx, double cy, double half, bool clockwise = false) {
+    Path geometrySquare(double cx, double cy, double half, bool clockwise = false) {
         Path p;
         p.moveTo(cx - half, cy - half);
         if (clockwise) {
@@ -167,8 +167,8 @@ TEST_F(TitleGeometryTest, OutlineOperationsRunWarpDistortWeight) {
 
 TEST(TitleOffsetTest, WeightUnionsAndOffsetsWithRoundJoins) {
     // two overlapping squares: the non-zero union merges them; a reversed one is a counter
-    Path p = square(0, 0, 50);
-    p.append(square(60, 0, 50));
+    Path p = geometrySquare(0, 0, 50);
+    p.append(geometrySquare(60, 0, 50));
     const Path grown = weightPath(p, 10, 200);
     const TitleRect b = grown.controlBounds();
     EXPECT_NEAR(b.x, -60, 0.01);
@@ -178,8 +178,8 @@ TEST(TitleOffsetTest, WeightUnionsAndOffsetsWithRoundJoins) {
     const double expected = 160 * 100 + 2 * 160 * 10 + 2 * 100 * 10 + 3.14159265 * 100;
     EXPECT_NEAR(area(grown), expected, expected * 0.002);
     EXPECT_EQ(weightPath(p, 0, 200).pointList().size(), p.pointList().size()) << "weight 0 is the outline itself";
-    Path counter = square(0, 0, 50);
-    counter.append(square(0, 0, 20, true));
+    Path counter = geometrySquare(0, 0, 50);
+    counter.append(geometrySquare(0, 0, 20, true));
     const Path thicker = weightPath(counter, 5, 200);
     EXPECT_EQ(thicker.contourCount(), 2u);
     EXPECT_NEAR(thicker.signedArea(0.01), (110.0 * 110 - 4 * 25 + 3.14159265 * 25) - 30.0 * 30, 3) << "the counter shrinks";
@@ -187,8 +187,8 @@ TEST(TitleOffsetTest, WeightUnionsAndOffsetsWithRoundJoins) {
 
 TEST(TitlePlateTest, ContourClosingHullAndBox) {
     // two squares 20 apart: closing by 15 bridges the gap, closing by 5 does not
-    Path pair = square(-40, 0, 30);
-    pair.append(square(40, 0, 30));
+    Path pair = geometrySquare(-40, 0, 30);
+    pair.append(geometrySquare(40, 0, 30));
     const Path closed = plateBase(pair, PlateParams{PlateKind::Contour, 15.0 / 2, 0, 0}, 200, 0);
     EXPECT_EQ(closed.contourCount(), 1u);
     // the bridge fills the gap but for the two shallow notches a closing disc leaves at its ends

@@ -545,7 +545,7 @@ namespace {
         // a project gets a copy of builtin:pixelfx-effects (the editor's): here the ramps are inline
         const std::string json = std::regex_replace(text.str(), std::regex("\"ramp\": \"builtin:pixelfx-effects#ramp:[a-z_]+\""),
                                                     "\"rampColors\": [\"#fff3a6\", \"#ffb03b\", \"#c8481c\", \"#5a1e12\"]");
-        std::vector<Diagnostic> diagnostics;
+        std::vector<jasperengine::particles::Diagnostic> diagnostics;
         EXPECT_TRUE(ParticleEffectCodec::read(json, d, diagnostics)) << name << ": " << ParticleEffectCodec::format(diagnostics);
         return d;
     }

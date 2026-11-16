@@ -30,18 +30,18 @@ using namespace jasperengine::titleart::test;
 
 namespace {
 
-    constexpr const char* TEXT_LAYER = "00000001";
+    constexpr const char* BENCH_TEXT_LAYER = "00000001";
     constexpr int WARMUPS = 5;
     constexpr int SAMPLES = 30;
 
     std::shared_ptr<const TitleArtDoc> counterDoc() {
-        Json text{{"id", TEXT_LAYER}, {"type", "text"}, {"name", "Score"}, {"text", "0"}, {"font", fontRef(SOURCE_SANS)}, {"size", 96},
+        Json text{{"id", BENCH_TEXT_LAYER}, {"type", "text"}, {"name", "Score"}, {"text", "0"}, {"font", fontRef(SOURCE_SANS)}, {"size", 96},
                   {"features", {{"tnum", 1}}}, {"kerning", false},
                   {"style", {{"face", solidFace("#ffd040")}, {"rims", Json::array({Json{{"id", "00000101"}, {"width", 6}, {"material", solidFace("#802000")}}})}}}};
         Json root{{"format", TITLE_ART_FORMAT}, {"version", TITLE_ART_VERSION}, {"guid", "0123456789abcdef0123456789abcdef"}};
         root["canvas"] = canvas(640, 160);
         root["layers"] = Json::array({shapeLayer("00000002", "rect", 140, solidFace("#203060"), {{"aspect", 4.0}}), text});
-        root["exposed"] = Json::array({Json{{"name", "text"}, {"type", "text"}, {"targets", Json::array({Json{{"layer", TEXT_LAYER}, {"field", "text"}}})}}});
+        root["exposed"] = Json::array({Json{{"name", "text"}, {"type", "text"}, {"targets", Json::array({Json{{"layer", BENCH_TEXT_LAYER}, {"field", "text"}}})}}});
         return std::make_shared<const TitleArtDoc>(parseTitleArtJson(std::move(root)).doc);
     }
 
@@ -76,7 +76,7 @@ namespace {
         return v[std::min(v.size() - 1, (size_t)std::floor(p * (double)(v.size() - 1) + 0.5))];
     }
 
-    TitleArtLiveState state() {
+    TitleArtLiveState benchState() {
         TitleArtLiveState s;
         s.label = "TitleArt/Score";
         return s;
@@ -105,7 +105,7 @@ TEST_F(TitleArtRuntimeBenchGpu, HostNumbers) {
         for (int i = 0; i < WARMUPS + SAMPLES; i++) {
             const std::string text = std::to_string(value++);
             const uint64_t cells = live.glyphAtlas() ? live.glyphAtlas()->stats().cellRenders : 0;
-            live.setState(state(), fnv1a64(text), {FieldOverride{TEXT_LAYER, "text", Json(text)}});
+            live.setState(benchState(), fnv1a64(text), {FieldOverride{BENCH_TEXT_LAYER, "text", Json(text)}});
             const Sample s = untilIdle(live, factory, unlimited);
             ASSERT_TRUE(live.front().valid()) << live.status().error;
             if (i < WARMUPS) continue;
@@ -128,7 +128,7 @@ TEST_F(TitleArtRuntimeBenchGpu, HostNumbers) {
     // the scheduler's frames under a 4 ms budget: each frame's estimates stay within the budget
     // except the step a frame always runs (R13)
     TitleArtLive sliced("assets/score.titleart", TitleArtRenderMode::REALTIME, doc, 1);
-    sliced.setState(state(), fnv1a64("sliced"), {FieldOverride{TEXT_LAYER, "text", Json("987654")}});
+    sliced.setState(benchState(), fnv1a64("sliced"), {FieldOverride{BENCH_TEXT_LAYER, "text", Json("987654")}});
     double worstUs = 0.0;
     const Sample s = untilIdle(sliced, factory, 4000, &worstUs);
     std::printf("[bench] host: Realtime render sliced at 4 ms: %d frames, %.2f ms wall, largest multi-step frame estimate %.2f ms\n", s.frames,

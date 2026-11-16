@@ -54,7 +54,7 @@ namespace {
         return options;
     }
 
-    std::vector<uint8_t> readTarget(){
+    std::vector<uint8_t> readAtmosphereTarget(){
         Framebuffer& target = GpuEnvironment::target();
         std::vector<uint8_t> rgba;
         readTexture(target.getRender().getColorTexture(), (int)target.getWidth(), (int)target.getHeight(), rgba);
@@ -62,7 +62,7 @@ namespace {
     }
 
     // mean over the pixels of the largest channel difference (0..255)
-    double meanDifference(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
+    double atmosphereMeanDifference(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b){
         if (a.size() != b.size() || a.empty())
             return 255.0;
         double sum = 0.0;
@@ -260,7 +260,7 @@ TEST_F(AtmosphereGpu, HeightFogOrthographic){
 
     // the fog varies with world height (not with the ortho depth): the tower's top keeps its
     // red, its foot takes the fog's white
-    const std::vector<uint8_t> image = readTarget();
+    const std::vector<uint8_t> image = readAtmosphereTarget();
     int topX = 0, topY = 0, footX = 0, footY = 0;
     ASSERT_TRUE(project(camera, Vector3(1.9f, 22.0f, 1.9f), topX, topY));
     ASSERT_TRUE(project(camera, Vector3(1.9f, 1.0f, 1.9f), footX, footY));
@@ -333,7 +333,7 @@ TEST_F(AtmosphereGpu, VolumetricFogHandsOffToTheAnalyticFog){
     camera.setTarget(0.0f, 0.0f, -60.0f);
     camera.setFarClip(3000.0f);
     ASSERT_TRUE(render());
-    const std::vector<uint8_t> analytic = readTarget();
+    const std::vector<uint8_t> analytic = readAtmosphereTarget();
     const int width = (int)GpuEnvironment::target().getWidth();
     const int height = (int)GpuEnvironment::target().getHeight();
     writePng(getOutputDirectory() + "/atmosphere_handoff_analytic.png", analytic, width, height);
@@ -343,9 +343,9 @@ TEST_F(AtmosphereGpu, VolumetricFogHandsOffToTheAnalyticFog){
         Engine::setAtmosphereQuality(quality);
         ASSERT_TRUE(render());
         EXPECT_TRUE(info().volumetricActive) << AtmosphereTiers::getName(quality);
-        const std::vector<uint8_t> volumetric = readTarget();
+        const std::vector<uint8_t> volumetric = readAtmosphereTarget();
         writePng(getOutputDirectory() + "/atmosphere_handoff_" + AtmosphereTiers::getName(quality) + ".png", volumetric, width, height);
-        const double difference = meanDifference(analytic, volumetric);
+        const double difference = atmosphereMeanDifference(analytic, volumetric);
         std::printf("[atmosphere] handoff %s: mean difference %.3f\n", AtmosphereTiers::getName(quality), difference);
         EXPECT_LE(difference, 2.0) << AtmosphereTiers::getName(quality);
     }
@@ -364,11 +364,11 @@ TEST_F(AtmosphereGpu, LowPrecisionTargetsMatchFloatOnes){
     camera.setTarget(0.0f, 4.0f, -100.0f);
     camera.setFarClip(3000.0f);
     ASSERT_TRUE(render());
-    const std::vector<uint8_t> floatTargets = readTarget();
+    const std::vector<uint8_t> floatTargets = readAtmosphereTarget();
     AtmosphereRenderer::setForceLowPrecisionTargets(true);
     ASSERT_TRUE(render());
     EXPECT_FALSE(info().floatTargets);
-    EXPECT_LE(meanDifference(floatTargets, readTarget()), 3.0);
+    EXPECT_LE(atmosphereMeanDifference(floatTargets, readAtmosphereTarget()), 3.0);
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -425,7 +425,7 @@ TEST_F(AtmosphereGpu, LightShafts){
         Engine::setAtmosphereQuality(quality);
         shafts.fog.setLightShafts(true);
         ASSERT_TRUE(render());
-        const std::vector<uint8_t> image = readTarget();
+        const std::vector<uint8_t> image = readAtmosphereTarget();
         const double lit = luminance(image, litX - 4, litY - band / 2, 8, band);
         const double shadowed = luminance(image, shadowX - 4, shadowY - band / 2, 8, band);
         std::printf("[atmosphere] shafts %s: lit %.1f shadowed %.1f\n", AtmosphereTiers::getName(quality), lit, shadowed);
@@ -435,7 +435,7 @@ TEST_F(AtmosphereGpu, LightShafts){
         // without light shafts the fog is lit everywhere
         shafts.fog.setLightShafts(false);
         ASSERT_TRUE(render());
-        const std::vector<uint8_t> flat = readTarget();
+        const std::vector<uint8_t> flat = readAtmosphereTarget();
         const double litFlat = luminance(flat, litX - 4, litY - band / 2, 8, band);
         const double shadowedFlat = luminance(flat, shadowX - 4, shadowY - band / 2, 8, band);
         std::printf("[atmosphere] shafts off %s: lit %.1f shadowed %.1f\n", AtmosphereTiers::getName(quality), litFlat, shadowedFlat);
@@ -464,7 +464,7 @@ TEST_F(AtmosphereGpu, LocalVolumetricFog){
     camera.setTarget(0.0f, 3.0f, -40.0f);
     camera.setFarClip(200.0f);
     ASSERT_TRUE(render());
-    const std::vector<uint8_t> clear = readTarget();
+    const std::vector<uint8_t> clear = readAtmosphereTarget();
 
     LocalVolumetricFog volume(&scene);
     volume.setPosition(0.0f, 3.0f, -10.0f);
@@ -473,7 +473,7 @@ TEST_F(AtmosphereGpu, LocalVolumetricFog){
     volume.setAlbedo(0.9f, 0.9f, 0.9f);
     volume.setBlendDistance(0.5f);
     ASSERT_TRUE(render());
-    const std::vector<uint8_t> boxed = readTarget();
+    const std::vector<uint8_t> boxed = readAtmosphereTarget();
     EXPECT_EQ(info().volumesUsed, 1);
 
     int insideX = 0, insideY = 0, outsideX = 0, outsideY = 0, cornerX = 0, cornerY = 0;
@@ -487,7 +487,7 @@ TEST_F(AtmosphereGpu, LocalVolumetricFog){
     EXPECT_NEAR(luminance(boxed, cornerX - 1, cornerY - 2, 2, 4), luminance(clear, cornerX - 1, cornerY - 2, 2, 4), 1.5);
     volume.setRotation(0.0f, 45.0f, 0.0f);
     ASSERT_TRUE(render());
-    EXPECT_GT(luminance(readTarget(), cornerX - 1, cornerY - 2, 2, 4), luminance(clear, cornerX - 1, cornerY - 2, 2, 4) + 3.0);
+    EXPECT_GT(luminance(readAtmosphereTarget(), cornerX - 1, cornerY - 2, 2, 4), luminance(clear, cornerX - 1, cornerY - 2, 2, 4) + 3.0);
 
     // ten volumes: the tier's cap, the nearest first
     std::vector<std::unique_ptr<LocalVolumetricFog>> more;
@@ -553,9 +553,9 @@ TEST_F(AtmosphereGpu, VolumetricClouds){
             ASSERT_TRUE(settleClouds(scene)) << presets[p];
             EXPECT_TRUE(info().cloudsActive);
             EXPECT_EQ(info().cloudsMode, q == 2 ? CloudsRendering::SCREEN : CloudsRendering::SKY_MAP);
-            const std::vector<uint8_t> first = readTarget();
+            const std::vector<uint8_t> first = readAtmosphereTarget();
             GpuEnvironment::drawFrames(1);
-            const std::vector<uint8_t> second = readTarget();
+            const std::vector<uint8_t> second = readAtmosphereTarget();
             // static per-pixel jitter, no history: a converged frame is the one before it
             EXPECT_TRUE(first == second) << presets[p] << " " << qualityNames[q];
             EXPECT_GOLDEN_OPTIONS(std::string("atmosphere_clouds_") + presets[p] + "_" + qualityNames[q], goldenTolerance());
@@ -604,7 +604,7 @@ TEST_F(AtmosphereGpu, AWeatherMapTilesWhateverItsWrap){
         map.setData("weather-repeat", weatherData());
         ASSERT_TRUE(settleClouds(scene));
         EXPECT_TRUE(info().cloudsActive);
-        const std::vector<uint8_t> tiled = readTarget();
+        const std::vector<uint8_t> tiled = readAtmosphereTarget();
 
         map.setData("weather-clamp", weatherData());
         map.setWrapU(TextureWrap::CLAMP_TO_EDGE);
@@ -613,7 +613,7 @@ TEST_F(AtmosphereGpu, AWeatherMapTilesWhateverItsWrap){
         EXPECT_TRUE(info().cloudsActive);
         EXPECT_EQ(map.getWrapU(), TextureWrap::CLAMP_TO_EDGE) << "a draw wrote the component's wrap";
         EXPECT_EQ(map.getWrapV(), TextureWrap::CLAMP_TO_EDGE) << "a draw wrote the component's wrap";
-        EXPECT_LE(meanDifference(tiled, readTarget()), 0.05) << "the clouds tile whatever the wrap";
+        EXPECT_LE(atmosphereMeanDifference(tiled, readAtmosphereTarget()), 0.05) << "the clouds tile whatever the wrap";
 
         map.setWrapU(TextureWrap::REPEAT);
         map.setWrapV(TextureWrap::REPEAT);
@@ -634,7 +634,7 @@ TEST_F(AtmosphereGpu, ScreenCloudsHideFarTerrain){
     camera.setTarget(0.0f, 1500.0f, -7000.0f);
     camera.setFarClip(60000.0f);
     ASSERT_TRUE(render());
-    const std::vector<uint8_t> bare = readTarget();
+    const std::vector<uint8_t> bare = readAtmosphereTarget();
 
     int mountainX = 0, mountainY = 0;
     ASSERT_TRUE(project(camera, Vector3(0.0f, 2200.0f, -6500.0f), mountainX, mountainY));
@@ -645,13 +645,13 @@ TEST_F(AtmosphereGpu, ScreenCloudsHideFarTerrain){
     Engine::setAtmosphereQuality(AtmosphereQuality::HIGH);
     ASSERT_TRUE(settleClouds(scene));
     EXPECT_EQ(info().cloudsMode, CloudsRendering::SCREEN);
-    EXPECT_GT(std::fabs(luminance(readTarget(), mountainX - 8, mountainY - 8, 16, 16) - luminance(bare, mountainX - 8, mountainY - 8, 16, 16)), 4.0);
+    EXPECT_GT(std::fabs(luminance(readAtmosphereTarget(), mountainX - 8, mountainY - 8, 16, 16) - luminance(bare, mountainX - 8, mountainY - 8, 16, 16)), 4.0);
 
     // the Sky Map clouds are behind every surface
     clouds.setRendering(CloudsRendering::SKY_MAP);
     ASSERT_TRUE(settleClouds(scene));
     EXPECT_EQ(info().cloudsMode, CloudsRendering::SKY_MAP);
-    EXPECT_NEAR(luminance(readTarget(), mountainX - 8, mountainY - 8, 16, 16), luminance(bare, mountainX - 8, mountainY - 8, 16, 16), 1.0);
+    EXPECT_NEAR(luminance(readAtmosphereTarget(), mountainX - 8, mountainY - 8, 16, 16), luminance(bare, mountainX - 8, mountainY - 8, 16, 16), 1.0);
     EXPECT_NO_ENGINE_ERRORS();
 }
 
@@ -671,14 +671,14 @@ TEST_F(AtmosphereGpu, TransparentsTakeTheAnalyticFog){
     ASSERT_TRUE(render());
     int x = 0, y = 0;
     ASSERT_TRUE(project(camera, Vector3(0.0f, 4.0f, -20.0f), x, y));
-    const std::vector<uint8_t> clear = readTarget();
+    const std::vector<uint8_t> clear = readAtmosphereTarget();
 
     Fog fog(&scene);
     valleyFog(fog);
     fog.setAttenuationDistance(30.0f);
     fog.setVolumetric(true);
     ASSERT_TRUE(render());
-    const std::vector<uint8_t> fogged = readTarget();
+    const std::vector<uint8_t> fogged = readAtmosphereTarget();
     // the glass's green is washed towards the fog's grey-blue
     const int width = (int)GpuEnvironment::target().getWidth();
     const uint8_t* before = &clear[((size_t)y * width + x) * 4];

@@ -41,7 +41,7 @@ using namespace jasperengine::camera;
 
 namespace {
 
-    constexpr float DT = 1.0f / 60.0f;
+    constexpr float SHAKE_DT = 1.0f / 60.0f;
 
     ShakePreset preset(ShakeType type, float strength, float roughness, float fadeIn, float fadeOut,
                        Vector3 position = Vector3(1, 1, 1), Vector3 rotation = Vector3(1, 1, 1)){
@@ -95,7 +95,7 @@ namespace {
         CameraShakerComponent& shaker(Entity entity){ return scene.getComponent<CameraShakerComponent>(entity); }
         CameraComponent& cameraOf(Entity entity){ return scene.getComponent<CameraComponent>(entity); }
 
-        void step(float dt = DT, int count = 1, float unscaled = -1.0f){
+        void step(float dt = SHAKE_DT, int count = 1, float unscaled = -1.0f){
             for (int i = 0; i < count; i++){
                 system().step(dt, unscaled < 0.0f ? dt : unscaled);
             }
@@ -153,29 +153,29 @@ TEST(ShakeTimeline, OneShotFadesInThenOutAndEnds){
     float previousFade = 0.0f;
     bool decreased = false;
     for (int i = 1; i <= 200 && endStep < 0; i++){
-        instance.step(DT);
+        instance.step(SHAKE_DT);
         if (fullStep < 0 && instance.getFade() >= 1.0f) fullStep = i;
         if (fullStep > 0 && i > fullStep && instance.getFade() < previousFade) decreased = true;
         previousFade = instance.getFade();
         if (instance.isFinished()) endStep = i;
     }
-    EXPECT_NEAR(fullStep * DT, 0.05f, DT + 1e-4f);
+    EXPECT_NEAR(fullStep * SHAKE_DT, 0.05f, SHAKE_DT + 1e-4f);
     EXPECT_TRUE(decreased);
-    EXPECT_NEAR(endStep * DT, 1.05f, DT + 1e-4f);
+    EXPECT_NEAR(endStep * SHAKE_DT, 1.05f, SHAKE_DT + 1e-4f);
 }
 
 TEST(ShakeTimeline, SustainedHoldsUntilStop){
     ShakeInstance instance(preset(ShakeType::Sustained, 1, 1, 0.1f, 2.0f), 3);
-    for (int i = 0; i < 300; i++) instance.step(DT);
+    for (int i = 0; i < 300; i++) instance.step(SHAKE_DT);
     EXPECT_EQ(instance.getState(), ShakeState::Sustained);
     EXPECT_FLOAT_EQ(instance.getFade(), 1.0f);
     instance.stop(0.5f);
     int steps = 0;
     while (!instance.isFinished() && steps < 1000){
-        instance.step(DT);
+        instance.step(SHAKE_DT);
         steps++;
     }
-    EXPECT_NEAR(steps * DT, 0.5f, DT + 1e-4f);
+    EXPECT_NEAR(steps * SHAKE_DT, 0.5f, SHAKE_DT + 1e-4f);
 }
 
 TEST(ShakeTimeline, ZeroFadeInIsInstantAndZeroStepsChangeNothing){
@@ -183,7 +183,7 @@ TEST(ShakeTimeline, ZeroFadeInIsInstantAndZeroStepsChangeNothing){
     instance.step(0.0f);
     EXPECT_EQ(instance.getState(), ShakeState::FadingIn);
     EXPECT_FLOAT_EQ(instance.getFade(), 0.0f);
-    instance.step(DT);
+    instance.step(SHAKE_DT);
     EXPECT_FLOAT_EQ(instance.getFade(), 1.0f);
     EXPECT_EQ(instance.getState(), ShakeState::Sustained);
     // a stop taken during a zero step is kept (MilkShake turned the shake Sustained again)
@@ -195,11 +195,11 @@ TEST(ShakeTimeline, ZeroFadeInIsInstantAndZeroStepsChangeNothing){
 TEST(ShakeTimeline, UpdateReturnsTheOffsetBeforeTheStep){
     // MilkShake's UpdateShake: the first frame of a shake is still (fade 0)
     ShakeInstance instance(preset(ShakeType::Sustained, 1, 10, 0.0f, 0.0f), 42);
-    ShakeOffset first = instance.update(DT);
+    ShakeOffset first = instance.update(SHAKE_DT);
     EXPECT_EQ(first.position, Vector3(0, 0, 0));
     EXPECT_EQ(first.rotation, Vector3(0, 0, 0));
     ShakeOffset expected = instance.getOffset();
-    ShakeOffset second = instance.update(DT);
+    ShakeOffset second = instance.update(SHAKE_DT);
     EXPECT_EQ(second.position, expected.position);
     EXPECT_EQ(second.rotation, expected.rotation);
 }
@@ -223,9 +223,9 @@ TEST(ShakeFormula, MatchesMilkShake){
     // an instance of seed 100 at fade 1: its clock starts at b and moves by dt * roughness * fade
     ShakeInstance instance(p, b);
     EXPECT_FLOAT_EQ(instance.getNoiseTime(), 100.0f);
-    instance.step(DT);                      // fade 0 -> 1: the clock moved with fade 0
+    instance.step(SHAKE_DT);                      // fade 0 -> 1: the clock moved with fade 0
     EXPECT_FLOAT_EQ(instance.getNoiseTime(), 100.0f);
-    instance.step(DT);                      // 1/60 * 30 at fade 1
+    instance.step(SHAKE_DT);                      // 1/60 * 30 at fade 1
     EXPECT_NEAR(instance.getNoiseTime(), 100.5f, 1e-4f);
     ShakeOffset live = instance.getOffset();
     ShakeOffset reference = evaluateShake(p, b, instance.getNoiseTime(), 0.7f);
@@ -255,15 +255,15 @@ TEST(ShakeScales, StrengthAndRoughnessScales){
     ShakeInstance a(p, 9), b(p, 9);
     b.strengthScale = 0.5f;
     b.roughnessScale = 2.0f;
-    a.step(DT);
-    b.step(DT);
-    a.step(DT);
-    b.step(DT);
+    a.step(SHAKE_DT);
+    b.step(SHAKE_DT);
+    a.step(SHAKE_DT);
+    b.step(SHAKE_DT);
     EXPECT_NEAR(b.getNoiseTime() - 9.0f, 2.0f * (a.getNoiseTime() - 9.0f), 1e-4f);
     ShakeInstance c(p, 9);
     c.strengthScale = 0.5f;
-    c.step(DT);
-    c.step(DT);
+    c.step(SHAKE_DT);
+    c.step(SHAKE_DT);
     EXPECT_NEAR(c.getOffset().position.x, 0.5f * a.getOffset().position.x, 1e-6f);
     EXPECT_NEAR(c.getOffset().rotation.y, 0.5f * a.getOffset().rotation.y, 1e-6f);
 }
@@ -288,7 +288,7 @@ TEST(ShakeTrauma, ClampsDecaysAndUsesThePower){
     trauma.add(0.5f);
     trauma.add(0.5f);
     EXPECT_FLOAT_EQ(trauma.trauma, 1.0f);
-    for (int i = 0; i < 30; i++) trauma.step(DT, 1.0f, 15.0f);
+    for (int i = 0; i < 30; i++) trauma.step(SHAKE_DT, 1.0f, 15.0f);
     EXPECT_NEAR(trauma.trauma, 0.5f, 1e-4f);
     trauma.trauma = 0.5f;
     const ShakeOffset atPower2 = trauma.getOffset(2.0f, Vector3(1, 1, 1), Vector3(1, 1, 1));
@@ -310,7 +310,7 @@ TEST_F(Shake, TraumaShakesTheCamera){
         shaken = shaken || cameraOf(cam).hasViewOffset;
     }
     EXPECT_TRUE(shaken);
-    step(DT, 120);
+    step(SHAKE_DT, 120);
     EXPECT_FLOAT_EQ(shaker(cam).runtime->trauma.trauma, 0.0f);
     step();
     EXPECT_FALSE(cameraOf(cam).hasViewOffset);
@@ -355,7 +355,7 @@ TEST_F(Shake, ShakerSetsTheViewOffsetAndNeverTheTransform){
     options.hasSeed = true;
     options.seed = 77;
     CameraShaker(&scene, cam).shake(ShakeSource("explosion"), options);
-    step(DT, 5);
+    step(SHAKE_DT, 5);
     EXPECT_TRUE(cameraOf(cam).hasViewOffset);
     EXPECT_EQ(cameraOf(cam).viewOffsetPosition, shaker(cam).runtime->offsetPosition);
     EXPECT_NE(shaker(cam).runtime->offsetPosition, Vector3(0, 0, 0));
@@ -374,12 +374,12 @@ TEST_F(Shake, ZeroStrengthLeavesNoOffset){
     Entity cam = camera();
     ShakePreset p = preset(ShakeType::Sustained, 0.0f, 10.0f, 0.0f, 0.0f);
     CameraShaker(&scene, cam).shake(ShakeSource(p));
-    step(DT, 10);
+    step(SHAKE_DT, 10);
     EXPECT_FALSE(cameraOf(cam).hasViewOffset);
     ShakeOptions zero;
     zero.strength = 0.0f;
     CameraShaker(&scene, cam).shake(ShakeSource("explosion"), zero);
-    step(DT, 10);
+    step(SHAKE_DT, 10);
     EXPECT_FALSE(cameraOf(cam).hasViewOffset);
 }
 
@@ -416,15 +416,15 @@ TEST_F(Shake, TimeScaleZeroFreezesScaledShakesOnly){
     scaledOptions.hasSeed = true;
     scaledOptions.seed = 5;
     ShakeInstanceHandle scaled = shakerObject.shake(ShakeSource("drunk"), scaledOptions);
-    step(DT, 3);
+    step(SHAKE_DT, 3);
     // time scale 0: the scene delta is 0, the unscaled one goes on. The first frozen frame shows
     // the state the last step reached (MilkShake reports the state before each step), then it holds
-    step(0.0f, 1, DT);
+    step(0.0f, 1, SHAKE_DT);
     const Vector3 frozen = shaker(cam).runtime->offsetRotation;
-    step(0.0f, 6, DT);
+    step(0.0f, 6, SHAKE_DT);
     EXPECT_EQ(shaker(cam).runtime->offsetRotation, frozen);
     scaled.stop(0.0f);
-    step(DT, 2);
+    step(SHAKE_DT, 2);
     EXPECT_FALSE(scaled.isValid());
 
     ShakeOptions unscaledOptions;
@@ -432,9 +432,9 @@ TEST_F(Shake, TimeScaleZeroFreezesScaledShakesOnly){
     unscaledOptions.hasSeed = true;
     unscaledOptions.seed = 5;
     shakerObject.shake(ShakeSource("drunk"), unscaledOptions);
-    step(DT, 3);
+    step(SHAKE_DT, 3);
     const Vector3 before = shaker(cam).runtime->offsetRotation;
-    step(0.0f, 6, DT);
+    step(0.0f, 6, SHAKE_DT);
     EXPECT_NE(shaker(cam).runtime->offsetRotation, before);
 }
 
@@ -495,7 +495,7 @@ TEST_F(Shake, DisablingClearsTheOffsetAndEnablingReplaysTheStartPreset){
     EXPECT_EQ(shaker(cam).runtime->instances.size(), 1u) << "ten disable / enable cycles add nothing";
     // once the start shake is over, the next enable plays it again (Unity's OnEnable)
     CameraShaker(&scene, cam).stopAll(0.0f);
-    step(DT, 2);
+    step(SHAKE_DT, 2);
     EXPECT_EQ(shaker(cam).runtime->instances.size(), 0u);
     shaker(cam).enabled = false;
     step();
@@ -519,7 +519,7 @@ TEST_F(Shake, GlobalCallsSkipNonGlobalAndDisabledShakers){
     EXPECT_TRUE(handle.isPaused());
     EXPECT_EQ(handle.getState(), "paused");
     CameraShake::stopAll(0.0f);
-    step(DT, 2);
+    step(SHAKE_DT, 2);
     EXPECT_FALSE(handle.isValid());
 }
 
@@ -586,7 +586,7 @@ TEST_F(Shake, TransformModeShakesAnAnchoredImageAdditively){
     EXPECT_NE(live.positionOffset, Vector2(300, 400));
 
     handle.stop(0.0f);
-    step(DT, 3);
+    step(SHAKE_DT, 3);
     EXPECT_EQ(live.positionOffset, Vector2(300, 400));
     EXPECT_EQ(scene.getComponent<Transform>(image).rotation, Quaternion());
 }
@@ -616,7 +616,7 @@ TEST_F(Shake, TransformModeRestoresAPlainTransformExactly){
 TEST_F(Shake, RemovingTheShakerClearsItsOffset){
     Entity cam = camera();
     CameraShaker(&scene, cam).shake(ShakeSource("drunk"));
-    step(DT, 3);
+    step(SHAKE_DT, 3);
     EXPECT_TRUE(cameraOf(cam).hasViewOffset);
     scene.removeComponent<CameraShakerComponent>(cam);
     EXPECT_FALSE(cameraOf(cam).hasViewOffset);
@@ -628,7 +628,7 @@ TEST_F(Shake, EditModePreviewUsesItsOwnRuntime){
     Entity cam = camera();
     system().setPaused(true);
     ASSERT_TRUE(system().previewShake(cam, *findBuiltinShakePreset("drunk"), "drunk"));
-    for (int i = 0; i < 5; i++) system().update(DT);
+    for (int i = 0; i < 5; i++) system().update(SHAKE_DT);
     EXPECT_FALSE(shaker(cam).runtime && !shaker(cam).runtime->instances.empty());
     EXPECT_TRUE(system().isPreviewing());
     system().stopPreview();
@@ -803,13 +803,13 @@ TEST_F(Shake, TransformModeLeavesRelativeScriptMovesExact){
     while ((handle.isValid() || shaker(prop).runtime->transformActive) && frames < 300){
         system().preUpdate();
         Transform& t = scene.getComponent<Transform>(prop);
-        t.position = t.position + velocity * DT;   // the script
+        t.position = t.position + velocity * SHAKE_DT;   // the script
         step();
         frames++;
-        moved = moved || scene.getComponent<Transform>(prop).position != Vector3(2, 1, 0) + velocity * (DT * frames);
+        moved = moved || scene.getComponent<Transform>(prop).position != Vector3(2, 1, 0) + velocity * (SHAKE_DT * frames);
     }
     EXPECT_TRUE(moved) << "the shake showed while the script moved it";
-    const Vector3 expected = Vector3(2, 1, 0) + velocity * (DT * frames);
+    const Vector3 expected = Vector3(2, 1, 0) + velocity * (SHAKE_DT * frames);
     const Vector3 got = scene.getComponent<Transform>(prop).position;
     EXPECT_NEAR(got.x, expected.x, 1e-4f);
     EXPECT_NEAR(got.y, expected.y, 1e-4f);
@@ -855,13 +855,13 @@ TEST_F(Shake, TheAudioListenerKeepsTheSteadyUp){
 TEST_F(Shake, RemovingOrAddingTheCameraSwitchesModeCleanly){
     Entity cam = camera(Vector3(1, 2, 3));
     CameraShaker(&scene, cam).shake(ShakeSource(preset(ShakeType::Sustained, 1.0f, 13.0f, 0.0f, 0.0f)));
-    step(DT, 4);
+    step(SHAKE_DT, 4);
     ASSERT_TRUE(cameraOf(cam).hasViewOffset);
     scene.removeComponent<CameraComponent>(cam);
     EXPECT_FALSE(shaker(cam).runtime->applied);
     EXPECT_EQ(shaker(cam).runtime->offsetPosition, Vector3(0, 0, 0));
     // transform mode from its own pose
-    step(DT, 4);
+    step(SHAKE_DT, 4);
     EXPECT_TRUE(shaker(cam).runtime->transformActive);
     EXPECT_NE(scene.getComponent<Transform>(cam).position, Vector3(1, 2, 3));
     // a camera again: the Transform gets its base back at once, the shake goes to the view
@@ -870,7 +870,7 @@ TEST_F(Shake, RemovingOrAddingTheCameraSwitchesModeCleanly){
     scene.addComponent<CameraComponent>(cam, component);
     EXPECT_EQ(scene.getComponent<Transform>(cam).position, Vector3(1, 2, 3));
     EXPECT_FALSE(shaker(cam).runtime->transformActive);
-    step(DT, 3);
+    step(SHAKE_DT, 3);
     EXPECT_TRUE(cameraOf(cam).hasViewOffset);
     EXPECT_EQ(scene.getComponent<Transform>(cam).position, Vector3(1, 2, 3));
 }
@@ -900,7 +900,7 @@ TEST_F(Shake, FourShakersWithEightInstancesStayWithinBudget){
         object.addTrauma(1.0f);
         shaker(cam).traumaDecay = 0.0f;
     }
-    step(DT, 10);
+    step(SHAKE_DT, 10);
     std::vector<double> frames;
     for (int batch = 0; batch < 21; batch++){
         auto start = std::chrono::steady_clock::now();
