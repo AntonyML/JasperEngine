@@ -20,8 +20,11 @@
 
 #include "Jolt/Jolt.h"
 #include "Jolt/Physics/Body/BodyInterface.h"
+#include "Jolt/Physics/Collision/Shape/BoxShape.h"
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 using namespace jasperengine;
 using namespace voxeltest;
@@ -181,6 +184,27 @@ TEST_F(VoxelPhysics, BudgetPerTick) {
         EXPECT_LE(now - previous, batch);
         previous = now;
     }
+}
+
+TEST_F(VoxelPhysics, APreparedBodyJoinsAtItsFinalize) {
+    // V8: a block's body joins the world when its batch is finalized; a step while the batch is
+    // prepared (off the main thread) leaves it out. The step adding it too put it in the broad phase
+    // twice, and a later update walked a leaf whose body had moved (a SEGV in Jolt's Debug check)
+    const Entity entity = scene->createEntity();
+    scene->addComponent<Transform>(entity, {});
+    physics->createRigidbody(entity);
+    const JPH::Ref<JPH::Shape> shape = new JPH::BoxShape(JPH::Vec3(1.0f, 1.0f, 1.0f));
+    std::vector<JPH::BodyID> ids{physics->createStaticBodyForShape(entity, shape.GetPtr())};
+    ASSERT_FALSE(ids[0].IsInvalid());
+    const JPH::BodyInterface::AddState add = physics->prepareBodies(ids);
+    step();
+    EXPECT_FALSE(bodies().IsAdded(ids[0])) << "the step added a body its batch is adding";
+    physics->finalizeBodies(ids, add);
+    EXPECT_TRUE(bodies().IsAdded(ids[0]));
+    step(2);
+    EXPECT_TRUE(bodies().IsAdded(ids[0]));
+    physics->removeRigidbody(entity);
+    step();
 }
 
 TEST_F(VoxelPhysics, EmptiedBlockRemovesBody) {
