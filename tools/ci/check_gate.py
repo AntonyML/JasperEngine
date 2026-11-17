@@ -13,7 +13,8 @@ skipped while lanes.json says that lane did not need to run. It fails when:
     other than mcp (whose planned selection may be empty) while anything ran (a group only paths
     nothing reads touch runs nothing, D3);
   - a test lane (TEST_LANES) succeeded with zero tests in its report, or with no report; each MCP
-    shard of lanes.json counts on its own (report mcp-<shard>).
+    shard of lanes.json counts on its own (report mcp-<shard>), as does each unit job (unit-<job>:
+    core, editor-1, editor-2).
 A job of a lane that is not the lane's own job (windows-compile, of windows) is planned with its lane.
 A job's test run reported apart from the job (windows-editor-tests, of the windows editor leg) must
 have passed with tests in its report, or be --advisory.
@@ -117,10 +118,10 @@ def gate(needs_path: Path, lanes_path: Path | None, reports_dir: Path | None, ad
             if job == "mcp" and plan["shards"]:
                 for shard in plan["shards"]:
                     tests_verdict(f"mcp-{shard}", result, job)
-            elif job == "unit" and plan["unit_suites"]:
-                # one job per test binary (the unit matrix): each suite's report counts on its own
-                for suite in plan["unit_suites"]:
-                    tests_verdict(f"unit-{suite}", result, job)
+            elif job == "unit" and plan["unit_jobs"]:
+                # the unit matrix (a job per test binary, the editor's in parts): each job's report counts on its own
+                for unit_job in plan["unit_jobs"]:
+                    tests_verdict(f"unit-{unit_job}", result, job)
             else:
                 tests_verdict(job, result, job)
         else:

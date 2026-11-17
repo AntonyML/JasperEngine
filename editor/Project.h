@@ -1210,10 +1210,13 @@ namespace jasperengine::editor{
             std::atomic<bool> cancelled{false};
             std::atomic<bool> startupThreadDone{false};  // Set when connect thread exits
             std::atomic<bool> startupSucceeded{false};   // True only if finalizeStart was called
+            // Stop's main-thread CPU so far: its call and its teardown task (main thread only)
+            double stopCpuMs = 0.0;
         };
 
         mutable std::mutex playSessionMutex;
         std::shared_ptr<PlaySession> activePlaySession;
+        double lastStopCpuMs = 0.0;
         size_t closedSceneScriptReads = 0;
 
         // Single-frame advance while paused (see step())
@@ -3441,6 +3444,9 @@ namespace jasperengine::editor{
         void resume(uint32_t sceneId);
         void stop(uint32_t sceneId);
         void stopActivePlay();
+        // The last finished Stop's main-thread CPU in ms (its call and its teardown, not the frames
+        // drawn meanwhile): what it costs whatever the host's load (S71)
+        double getLastStopCpuMs() const;
 
         // Advances a paused game by exactly one frame (pausing it first if it plays).
         // The frame runs in the next draw of the scene, bracketed by the two calls below.

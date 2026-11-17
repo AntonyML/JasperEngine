@@ -345,9 +345,12 @@ namespace {
         std::unique_ptr<TitleArtRenderer> renderer;
     };
 
+    // over 5 min under ASan: the PR ASan lane leaves it to the nightly (docs/testing.md, Naming)
+    class Title3DParityGpuSlow : public Title3DParityGpu {};
+
 }
 
-TEST_F(Title3DParityGpu, PachislopLooks) {
+TEST_F(Title3DParityGpuSlow, PachislopLooks) {
     const std::filesystem::path fixtures = std::filesystem::path(jasperengine::test::testPaths().sourceDir) / "titleart" / "fixtures" / "pachislop3d";
     std::vector<std::filesystem::path> files;
     for (const auto& entry : std::filesystem::directory_iterator(fixtures)) {
