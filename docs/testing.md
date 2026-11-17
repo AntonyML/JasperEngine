@@ -988,8 +988,13 @@ Windows jobs' builds and the core tests' run included.
   file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
   and prints the rest, the lane's working set, on every run; on `main` it cuts that to the lane's cap
   (`max-size` in `ci.yml`), oldest-used first, and saves it. A cap below the working set loses the
-  start of the build, not all of it. The caps share GitHub's 10 GB per repository: of the Windows jobs
-  only the editor's and OpenGL's keep one; D3D11 and Vulkan build cold within the editor job's time.
+  start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
+  Vulkan SDK, uv and plan caches (about 1.2 GB), and the working sets (PR 26, no precompiled headers)
+  add up to more: linux 1.5 GB, unit-core 1.4, unit-editor 4.0, asan 5.3, htmlui 1.6, smoke 3.5,
+  web 0.5, android 0.6, macOS 1.6, Windows editor 0.9, Windows OpenGL 1.4. So linux, unit-core, web,
+  Android, macOS and the Windows editor and OpenGL jobs keep a whole one (8.6 GB of caps); unit-editor,
+  asan, htmlui and smoke keep none and build cold (their jobs still reuse what an earlier step of the
+  same job compiled), as do Windows D3D11 and Vulkan.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases
