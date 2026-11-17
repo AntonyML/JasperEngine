@@ -3451,6 +3451,20 @@ const editor::SourceCodeExportSettings& editor::Project::getSourceCodeExportSett
     return sourceCodeExportSettings;
 }
 
+void editor::Project::setTargetPlatforms(uint8_t platforms){
+    platforms &= allTargetPlatforms;
+    targetPlatforms = platforms ? platforms : allTargetPlatforms;
+}
+
+editor::BuildPlatform editor::Project::defaultBuildPlatform() const{
+    if (isTargetPlatform(hostBuildPlatform())) return hostBuildPlatform();
+    for (BuildPlatform platform : {BuildPlatform::Windows, BuildPlatform::MacOS, BuildPlatform::Linux, BuildPlatform::Android,
+                                   BuildPlatform::IOS, BuildPlatform::Web}){
+        if (isTargetPlatform(platform)) return platform;
+    }
+    return hostBuildPlatform();
+}
+
 editor::DesktopExportSettings& editor::Project::getDesktopExportSettings(){
     return desktopExportSettings;
 }
@@ -6507,6 +6521,7 @@ void editor::Project::resetConfigs() {
     buildMethod = "auto";
     packContent = false;
     stripEngineCode = true;
+    targetPlatforms = allTargetPlatforms;
     spriteAtlasMode = "enabled";
     setHtmlUiMsaaSamples(defaultHtmlUiMsaaSamples);
     setPixelsPerUnit(defaultPixelsPerUnit);
