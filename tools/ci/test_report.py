@@ -99,6 +99,13 @@ class GtestTest(unittest.TestCase):
         self.assertEqual(failures[0]["repro"],
                          "UNIT_TEST_ARGS=--gtest_filter=MeshBvh.Refit WERROR=1 UNIT_SUITE=core tools/build.sh unit-tests")
 
+    def test_a_shard_reproduces_the_test_alone(self):
+        # an editor part's run (UNIT_SHARD): one failing test needs no shard to run
+        tests, failures = report.parse_gtest_xml(FIXTURES / "gtest" / "core.xml",
+                                                 "UNIT_SHARD=2/2 UNIT_SUITE=editor WERROR=1 tools/build.sh unit-tests")
+        self.assertEqual(failures[0]["repro"],
+                         "UNIT_SUITE=core WERROR=1 UNIT_TEST_ARGS=--gtest_filter=MeshBvh.Refit tools/build.sh unit-tests")
+
     def test_crash_is_named_from_the_console(self):
         failures = report.parse_log(FIXTURES / "gtest" / "crash.log", "SANITIZE=address,undefined tools/build.sh unit-tests")
         crashed = [f for f in failures if f["title"] == "Crash.Segfaults crashed"]
@@ -667,6 +674,55 @@ class LaneNameTest(unittest.TestCase):
         self.assertEqual((report.lane_label("unit-editor", []), report.lane_base("unit-editor")), ("unit (editor)", "unit"))
         self.assertEqual((report.lane_label("mcp-2", ["1", "2"]), report.lane_base("mcp-2")), ("mcp (2/2)", "mcp"))
         self.assertEqual((report.lane_label("unit", []), report.lane_base("unit")), ("unit", "unit"))
+
+    def test_editor_parts_name_their_lane(self):
+        # the editor tests run in two jobs (tools/ci/plan_lanes.py UNIT_PARTS), each its own report
+        jobs = ["core", "editor-1", "editor-2"]
+        self.assertEqual((report.lane_label("unit-editor-2", [], jobs), report.lane_base("unit-editor-2")),
+                         ("unit (editor 2/2)", "unit"))
+        self.assertEqual(report.lane_label("unit-core", [], jobs), "unit (core)")
+        self.assertEqual(report.lane_jobs("unit", [], "pull_request", jobs), ["unit-core", "unit-editor-1", "unit-editor-2"])
+        self.assertEqual(report.lane_jobs("unit", [], "pull_request"), ["unit"])
+
+
+class UnitJobsTest(unittest.TestCase):
+    RUN = "https://github.com/o/r/actions/runs/812"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="unit-jobs-")
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def lanes(self, **extra):
+        path = self.dir / "lanes.json"
+        path.write_text(json.dumps(dict(lanes_json(), **extra)))
+        return report.load_lanes(path)
+
+    def test_load_lanes_reads_the_unit_jobs(self):
+        self.assertEqual(self.lanes(unit_jobs=["core", "editor-1", "editor-2"])["unit_jobs"], ["core", "editor-1", "editor-2"])
+        # not a job name: dropped (lanes.json is untrusted)
+        self.assertEqual(self.lanes(unit_jobs=["core", "../x", 3, "editor-1"])["unit_jobs"], ["core", "editor-1"])
+        # a plan from before the editor's parts: a job per planned binary
+        self.assertEqual(self.lanes(unit_run={"core": True, "editor": True})["unit_jobs"], ["core", "editor"])
+        self.assertEqual(self.lanes()["unit_jobs"], [])
+
+    def test_a_missing_part_is_reported(self):
+        reports_dir = self.dir / "reports"
+        reports_dir.mkdir()
+        names = ["changes", "lint", "linux", "asan", "smoke", "web", "android", "macos", "ios", "mcp-1", "mcp-2",
+                 "unit-core", "unit-editor-1"]
+        names += [f"windows-{p}" for p in report.WINDOWS_PARTS] + list(report.TEST_REPORTS)
+        for n in names:
+            r = lane_report(n, ran=7 if n.startswith(("unit", "mcp", "asan")) or n in report.TEST_REPORTS else 0)
+            (reports_dir / f"{n}.json").write_text(json.dumps(r))
+        lanes = self.lanes(unit_jobs=["core", "editor-1", "editor-2"])
+        lanes["lanes"]["htmlui"] = {"run": False, "why": "no HTML UI change"}
+        body = report.render(report.load_reports(reports_dir), lanes, self.RUN, "3f2c1ab" + "0" * 33, [])
+        self.assertIn("No report from: unit (editor 2/2)", body)
+        self.assertIn("unit (editor 1/2): passed, 7 tests", body)
+        self.assertNotIn("- unit:", body)
 
 
 class GhTest(unittest.TestCase):

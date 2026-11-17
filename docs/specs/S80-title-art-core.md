@@ -2259,7 +2259,7 @@ rest of S82 lands in 6B.
     in the preprocessor (`patterns.glsl` compiles one kind under `TA_PATTERN_ONLY`; constants alone
     left the first draw small but the front end still parsed and optimized everything, 2-4 s on the
     render thread). So every variant draws the whole program's pixels: byte for byte on both pixel
-    paths for every Material member (`TitleArtScenesGpu.ElementVariantsDrawTheWholeProgram`; red
+    paths for every Material member (`TitleArtScenesGpuSlow.ElementVariantsDrawTheWholeProgram`; red
     control by hand: without the satin bit the satin case differs by up to 128/255), and every golden
     and parity test passes unchanged. Count: at most 1 + 27 x 2 pattern states x 13 texture states x
     2^4 = 11,440 variants; a document plans one per distinct material (a title with rims 2-6), S32's

@@ -6,7 +6,7 @@
 // does and nothing outside its region; the ramp's bend changes the image (red control: bend 0);
 // the compressed-light path agrees with the float path, and Gold 3D "BIG" with its glint, and "BIG"
 // with a gem face and AO, render without a float target on every tier within AC9
-// (Title3DFallbackGpu; red control: the float targets the forced path took before); the debug views; AO (AC16) darkens the
+// (Title3DFallbackGpuSlow; red control: the float targets the forced path took before); the debug views; AO (AC16) darkens the
 // crevices and keeps open faces; gems refract the layer's own opaque parts (AC11); a part's own
 // environment lights that part only; the glint (AC17) adds light past the letters on every tier
 // (red control: a threshold nothing passes); an environment build is spread over frames (the 21 s
@@ -79,7 +79,8 @@ namespace {
         void SetUp() override { JASPER_REQUIRE_GPU(); }
     };
 
-    class Title3DFallbackGpu : public Title3DRendererGpu {};
+    // over 5 min under ASan: the PR ASan lane leaves it to the nightly (docs/testing.md, Naming)
+    class Title3DFallbackGpuSlow : public Title3DRendererGpu {};
 
     // AC9's fixture: Gold 3D "BIG" (S84's metal/gold-3d structure, as the bake bench builds it),
     // with S83's stock star glint or none
@@ -177,7 +178,7 @@ TEST_F(Title3DRendererGpu, CompressedLightAgreesWithFloat) {
     EXPECT_LE(d.overFraction, 0.02);
 }
 
-TEST_F(Title3DFallbackGpu, TheGlintRunsWithoutFloatTargetsOnEveryTier) {
+TEST_F(Title3DFallbackGpuSlow, TheGlintRunsWithoutFloatTargetsOnEveryTier) {
     // AC9, R30, R32: Gold 3D "BIG" with the glint on, at Bake and High (the full chain), Medium (the
     // reduction) and Low (the sprites), with float targets and with TITLE_ART_TEST_NO_FLOAT_TARGETS
     // (each on its own renderer): the forced render acquires no float target and makes no float
@@ -210,7 +211,7 @@ TEST_F(Title3DFallbackGpu, TheGlintRunsWithoutFloatTargetsOnEveryTier) {
     }
 }
 
-TEST_F(Title3DFallbackGpu, AOAndGemsRenderWithoutFloatTargets) {
+TEST_F(Title3DFallbackGpuSlow, AOAndGemsRenderWithoutFloatTargets) {
     // AC9, R21, R30, R31: "BIG" with a sapphire face over gold bands and AO on, glint off, at Bake and
     // High (where AO and the gem behind copy run) and Medium and Low: the forced render acquires no
     // float target and makes no float render target (the AO prepass packed into RGBA8, the behind
