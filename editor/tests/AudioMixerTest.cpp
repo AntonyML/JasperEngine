@@ -22,6 +22,7 @@
 #include "audio/AudioMixer.h"
 #include "audio/AudioMixerDocument.h"
 #include "audio/AudioMixerIO.h"
+#include "audio/LoudnessMonitor.h"
 #include "component/ActionComponent.h"
 #include "component/AnimationComponent.h"
 #include "component/AudioSnapshotComponent.h"
@@ -1742,6 +1743,61 @@ TEST_F(AudioMixerRuntimeTest, ANewProjectHoldsItsCeilingAtTheOutput) {
     EXPECT_GT(output.truePeakDb, -3.0) << "the limiter holds it at its ceiling, not under";
     ASSERT_TRUE(output.integrated && master.integrated);
     EXPECT_NEAR(*output.integrated, *master.integrated, 0.1);
+}
+
+// What agents and the Mixer window read at the Master holds the ceiling the output holds, wherever in
+// the tone the reading starts: the tap joins a playing signal, which is not a step from silence (CI
+// read -0.07 dBTP behind a -1 dBTP limiter at one Play start in three)
+TEST_F(AudioMixerRuntimeTest, TheLoudnessReadingHoldsTheCeilingWhereverItJoins) {
+    AudioSystem::close();
+    AudioConfig config;
+    config.outputStage = AudioOutputStage::Linear;
+    AudioSystem::configure(config);
+    ASSERT_TRUE(AudioSystem::init());
+    AudioMixerDef def = AudioMixerDocument::newProjectMixer();
+    AudioMixerGroupDef hot;
+    hot.id = "00000002";
+    hot.name = "Hot";
+    hot.parentId = def.groups.front().id;
+    hot.volumeDb = 18.0f;
+    def.groups.push_back(hot);
+    AudioMixer::apply(def);
+    // the group volumes as a frame sets them, with nothing mixed yet
+    AudioMixer::update(0.0, 0.0);
+
+    AudioSource sound = source("tone.wav", "Hot");
+    sound.setLooping(true);
+    sound.play();
+    scene->getSystem<AudioSystem>()->update(0.0);
+    const unsigned int rate = soloud().getBackendSamplerate();
+    // the output from the tone's first sample: the limiter holds it from the start
+    AudioMeter atOutput(rate, 2);
+    std::vector<float> out(1024 * 2);
+    auto mix = [&](unsigned int frames) {
+        soloud().mix(out.data(), frames);
+        atOutput.process(out.data(), frames);
+    };
+    LoudnessMonitor& monitor = LoudnessMonitor::get();
+    monitor.update(false);
+    mix(1024);
+    // a 1 kHz period is 44.1 frames: joins at every phase of it
+    int over = 0;
+    double worst = AudioMeter::SILENCE_DB;
+    for (unsigned int offset = 1; offset <= 45; offset++) {
+        mix(offset);
+        monitor.requestByAgent();
+        monitor.update(true);
+        for (int block = 0; block < 8; block++) mix(1024);
+        const double truePeak = monitor.reading().truePeakDb;
+        monitor.update(false);
+        worst = std::max(worst, truePeak);
+        if (truePeak > -0.9) over++;
+        EXPECT_GT(truePeak, -3.0) << "it reads the limited tone, joined after " << offset << " frames";
+    }
+    sound.stop();
+    EXPECT_EQ(over, 0) << "joins over -0.9 dBTP; the worst read " << worst;
+    EXPECT_LE(atOutput.result().truePeakDb, -0.9);
+    EXPECT_GT(atOutput.result().truePeakDb, -3.0);
 }
 
 TEST(GeneratorAudioTest, TheOutputStageAndTheIosSessionReachTheExportedInit) {
