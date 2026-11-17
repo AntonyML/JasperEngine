@@ -162,9 +162,12 @@ namespace {
             EXPECT_EQ(workingFiles(dir), 1u) << "the working file, a temporary sibling of the spool's name";
         }
         EXPECT_EQ(workingFiles(dir), 0u) << "the working file goes with the spool";
-        std::ifstream in(dir / "x.psd", std::ios::binary);
-        const std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        EXPECT_EQ(file, batch) << "the same bytes as writing in memory";
+        {
+            // closed before the folder goes: an open file can't be removed on Windows
+            std::ifstream in(dir / "x.psd", std::ios::binary);
+            const std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            EXPECT_EQ(file, batch) << "the same bytes as writing in memory";
+        }
         fs::remove_all(dir);
     }
 
@@ -309,7 +312,13 @@ TEST(PsdWriter, NativeAdjustmentsRoundTrip) {
 
 // AC20: the independent reader accepts the writer's bytes; red control: one flipped length byte
 TEST(PsdWriter, PsdReadAccepts) {
-    if (std::system("python3 --version > /dev/null 2>&1") != 0) GTEST_SKIP() << "python3 is not on this machine";
+    // python.org's Windows installer has no python3, and cmd.exe no /dev/null
+#ifdef _WIN32
+    const std::string python = "python", nullDevice = "NUL";
+#else
+    const std::string python = "python3", nullDevice = "/dev/null";
+#endif
+    if (std::system((python + " --version > " + nullDevice + " 2>&1").c_str()) != 0) GTEST_SKIP() << python << " is not on this machine";
     const fs::path dir = fs::temp_directory_path() / "je_psdwriter_psdread";
     fs::create_directories(dir);
     const std::string script = std::string(JASPER_TEST_REPO_DIR) + "/tools/mcp/psdread.py";
@@ -319,7 +328,7 @@ TEST(PsdWriter, PsdReadAccepts) {
         ASSERT_TRUE(writePsd(document(bps), bytes, error)) << error;
         const fs::path good = dir / ("good" + std::to_string(bps * 8) + ".psd");
         std::ofstream(good, std::ios::binary).write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
-        EXPECT_EQ(std::system(("python3 -I \"" + script + "\" --check --icc \"" + good.string() + "\"").c_str()), 0) << bps * 8 << "-bit";
+        EXPECT_EQ(std::system((python + " -I \"" + script + "\" --check --icc \"" + good.string() + "\"").c_str()), 0) << bps * 8 << "-bit";
         // the layer and mask section's length, 4 bytes past the header, colour mode data and resources
         size_t at = 26;
         at += 4 + ((size_t)bytes[at] << 24 | (size_t)bytes[at + 1] << 16 | (size_t)bytes[at + 2] << 8 | bytes[at + 3]);
@@ -328,7 +337,7 @@ TEST(PsdWriter, PsdReadAccepts) {
         const fs::path bad = dir / ("bad" + std::to_string(bps * 8) + ".psd");
         std::ofstream(bad, std::ios::binary).write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
         const std::string out = (dir / "bad.txt").string();
-        EXPECT_NE(std::system(("python3 -I \"" + script + "\" --check \"" + bad.string() + "\" 2> \"" + out + "\"").c_str()), 0);
+        EXPECT_NE(std::system((python + " -I \"" + script + "\" --check \"" + bad.string() + "\" 2> \"" + out + "\"").c_str()), 0);
         std::ifstream in(out);
         const std::string message((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         EXPECT_NE(message.find("offset"), std::string::npos) << message;

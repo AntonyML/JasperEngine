@@ -1019,6 +1019,8 @@ TEST_F(VatBakerWindow_, InspectorRebakeOfAnImportRunsOnAWorker) {
     // worker with its stage line (the SideFX destruction takes seconds), never on the main thread
     const fs::path exportDir = vatimportfixtures::freshDir("window-rebake-import");
     vatimportfixtures::writeSoft(exportDir, "Wave", vatimportfixtures::SoftOptions());
+    // (the fixture's project is shared by the suite: its history may hold earlier tests' steps)
+    const size_t stepsBefore = project()->getProjectCommandHistory()->position();
     std::string error;
     ASSERT_TRUE(window->setSourcePath(exportDir.string(), error)) << error;
     window->importOutput().output = "assets/RebakeWave.vat";
@@ -1027,6 +1029,7 @@ TEST_F(VatBakerWindow_, InspectorRebakeOfAnImportRunsOnAWorker) {
     ASSERT_FALSE(window->statusIsError()) << window->getStatus();
     const VatWriteResult first = window->lastWrite();
     ASSERT_EQ(first.vat, "assets/RebakeWave.vat");
+    EXPECT_EQ(project()->getProjectCommandHistory()->position(), stepsBefore + 1) << "the import is one undo step";
 
     ASSERT_TRUE(vatAppHooks().rebake);
     window->setOpen(false);
@@ -1039,6 +1042,8 @@ TEST_F(VatBakerWindow_, InspectorRebakeOfAnImportRunsOnAWorker) {
     ASSERT_FALSE(window->statusIsError()) << window->getStatus();
     EXPECT_EQ(window->lastWrite().vat, first.vat);
     EXPECT_EQ(window->lastWrite().guid, first.guid) << "written over, GUID kept";
+    // the same export imports to the same bytes: writing them over is no step of its own
+    EXPECT_EQ(project()->getProjectCommandHistory()->position(), stepsBefore + 1);
 
     // a failing import (the export's textures gone) ends in the window's error, nothing written
     const std::string before = readAll(root() / first.vat);
@@ -1050,8 +1055,10 @@ TEST_F(VatBakerWindow_, InspectorRebakeOfAnImportRunsOnAWorker) {
     EXPECT_FALSE(window->isRunning());
     EXPECT_TRUE(window->statusIsError()) << window->getStatus();
     EXPECT_EQ(readAll(root() / first.vat), before);
+    EXPECT_EQ(project()->getProjectCommandHistory()->position(), stepsBefore + 1) << "the failed import added no step";
     ASSERT_TRUE(project()->getProjectCommandHistory()->undo());
-    ASSERT_TRUE(project()->getProjectCommandHistory()->undo());
+    EXPECT_EQ(project()->getProjectCommandHistory()->position(), stepsBefore);
+    EXPECT_FALSE(fs::exists(root() / first.vat)) << "one undo takes the import back";
 }
 
 TEST_F(VatBakerWindow_, ImportsAHoudiniExport) {
@@ -1168,7 +1175,13 @@ TEST_F(VatBakerWindow_, EverySectionDrawsInAFrame) {
     ASSERT_TRUE(window->setSourcePath("assets/models/rigid_arm.gltf", error)) << error;
     frame();
     ASSERT_TRUE(window->bake(false, error)) << error;
-    for (int i = 0; i < 400 && window->isRunning(); i++) frame();
+    // frames until the bake ends, not a count of them: the encoding runs on a worker, which a
+    // loaded machine's frames can outrun (frames wait for it as runToEnd's do)
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(300);
+    while (window->isRunning() && std::chrono::steady_clock::now() < deadline) {
+        frame();
+        if (Access::run(*window) && Access::run(*window)->state() == VatBakeState::Encoding) usleep(500);
+    }
     EXPECT_FALSE(window->isRunning()) << "the window's frames advance the bake";
     frame();
     frame();
