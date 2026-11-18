@@ -808,7 +808,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_windows == 'true'
     runs-on: windows-latest
-    timeout-minutes: 240
+    # a cold editor build (about 230 min, as after a cache-key change) plus the advisory editor-test
+    # step's own 75: past the job's limit GitHub cancels the job, and Check counts it red
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       # ccache where it shortens the lane (the 10 GB repository budget, docs/testing.md "CI"): the editor
