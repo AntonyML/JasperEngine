@@ -893,9 +893,18 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   Nothing of ours goes in a precompiled header: it would make every unit depend on it. On in the
   editor tree and in `tools/build.sh`'s Linux development and test trees; off for exports, web,
   Android and players, which therefore check that every source includes what it uses. Not on MSVC
-  (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator.
+  (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator. CI turns them
+  off everywhere (`JASPERENGINE_PCH=OFF` in `ci.yml`, which `tools/build.sh` and
+  `tools/ci/macos.sh` pass to every tree; set it to reproduce a lane exactly).
 - **ccache** needs `sloppiness = pch_defines,time_macros` to cache a unit that uses a precompiled
   header; `tools/build.sh` sets it in the Linux images (no Linux unit uses `__DATE__`/`__TIME__`).
+  A fresh tree at the same path then hits every unit while the cache holds the header's own entry:
+  a unit hashes the `.gch`, and two GCC builds of one header differ in their bytes, so once that
+  entry is evicted every unit built on it misses (a cache cut to 58 % of a core-tests build gave
+  15 % hits). Measured on the core-tests tree (6 CPUs, 1,900 units, host load 11-23): cold 1,403-1,575 s with
+  precompiled headers, 1,460 s without; warm 126-141 s with, 90 s without. Hence CI's `OFF`. In the
+  Android image ccache names the compiler by `--version`: the NDK is unpacked in each container, so
+  its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
@@ -1000,9 +1009,18 @@ Windows jobs' builds and the core tests' run included.
   project, or is `CI_EXCLUDED`) is listed under "not run in CI"; `MCP_SUITE=all` locally covers it.
 - **Push to `main`** builds only: its tests ran in the queue. It saves the caches (ccache per lane,
   the deps dumps `changes` plans from): a PR restores what `main` saved, never what the queue did.
-  The caps (`max-size` in `ci.yml`) share GitHub's 10 GB per repository: of the Windows jobs only the
-  editor's (1.2 GB, a full editor and tests build) and OpenGL's (0.15 GB) keep one; D3D11 and Vulkan
-  build cold within the editor job's time.
+- **ccache in CI**: a build runs with no size limit (a cleanup in the middle of a build evicts the
+  restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
+  file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
+  and prints the rest, the lane's working set, on every run; on `main` it cuts that to the lane's cap
+  (`max-size` in `ci.yml`), oldest-used first, and saves it. A cap below the working set loses the
+  start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
+  Vulkan SDK, uv and plan caches (about 1.2 GB), and the working sets (PR 26, no precompiled headers)
+  add up to more: linux 1.5 GB, unit-core 1.4, unit-editor 4.0, asan 5.3, htmlui 1.6, smoke 3.5,
+  web 0.5, android 0.6, macOS 1.6, Windows editor 0.9, Windows OpenGL 1.4. So linux, unit-core, web,
+  Android, macOS and the Windows editor and OpenGL jobs keep a whole one (8.6 GB of caps); unit-editor,
+  asan, htmlui and smoke keep none and build cold (their jobs still reuse what an earlier step of the
+  same job compiled), as do Windows D3D11 and Vulkan.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases

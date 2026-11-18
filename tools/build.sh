@@ -330,6 +330,9 @@ ENV_FLAGS+=(
 # through the header; no unit of a Linux build uses __DATE__ or __TIME__ (the web image's build
 # id does, and is not given this)
 [[ "$IMAGE_TARGET" == linux ]] && ENV_FLAGS+=(-e "CCACHE_SLOPPINESS=pch_defines,time_macros")
+# The Android Gradle plugin unpacks the NDK inside each container (the image has none), which gives its
+# compiler a new mtime, ccache's default compiler check, on every run: name it by its version instead
+[[ "$IMAGE_TARGET" == android ]] && ENV_FLAGS+=(-e "CCACHE_COMPILERCHECK=%compiler% --version")
 MOUNT_FLAGS=()
 # mcp-tests: the fixture project the default-fixture tests copy (the places
 # tools/mcp/harness.py default_fixture() looks in), mounted where the harness finds it
@@ -428,6 +431,14 @@ fi
 # the standalone engine tree's development and test builds (linux's sample project, unit-tests,
 # htmlui-tests) with precompiled headers; exports, web, Android and players keep it off
 DEV_ENGINE_FLAGS="-DJASPERENGINE_PCH=ON"
+# JASPERENGINE_PCH=OFF (CI, ci.yml): none in any tree. A GCC precompiled header is not the same bytes
+# twice, so once ccache has lost its entry every unit built on it misses; and a warm build without
+# them is faster (docs/testing.md "Build speed")
+if [[ -n "${JASPERENGINE_PCH:-}" ]]; then
+    [[ "$JASPERENGINE_PCH" =~ ^(ON|OFF)$ ]] || { echo "build.sh: JASPERENGINE_PCH is ON or OFF, got '$JASPERENGINE_PCH'" >&2; exit 2; }
+    DEV_ENGINE_FLAGS="-DJASPERENGINE_PCH=$JASPERENGINE_PCH"
+    OPTION_FLAGS="$OPTION_FLAGS -DJASPERENGINE_PCH=$JASPERENGINE_PCH"
+fi
 VARIANT="$CXX_SUFFIX$VARIANT"
 
 case "$TARGET" in
