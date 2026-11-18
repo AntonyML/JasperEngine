@@ -606,9 +606,11 @@ Each backend test is parameterised over `{Native, Polling}`.
   shared `jasperengine::test::TempDir`. After the S04 merge S04's file-local helpers met others
   (`lowerExtension`, `joinRelative`, `cacheVersion`, `trim`, `fixture`...): they have file-specific
   names now.
-- **Delete hold under polling** is the poll interval + 100 ms (R4's 200 ms with native events):
+- **Delete hold under polling** is two poll intervals + 100 ms (R4's 200 ms with native events):
   a scan between a save's delete and its rewrite would otherwise report a removal and an
-  addition (`FileWatcherTests.DeleteRecreate/Polling` under TSan's slowdown).
+  addition (`FileWatcherTests.DeleteRecreate/Polling` under TSan's slowdown). One interval + 100 ms
+  was not enough where a slow scan or a preempted poll thread delays the next poll (the macOS CI
+  runner, merge-queue run 44236737165); a removal is still reported well within AC1's interval + 1 s.
 - **S09 and S24 landed during the stream** (merged at the end). The `[Hot Reload]` Console
   lines are in S09's `asset` log category and the watcher's own warnings (a fallback to polling,
   an overflow) in `io`, so the Console's Category filter separates them. `FileWatchSubscription`
