@@ -452,6 +452,9 @@ jobs:
 
       # GPU suites included: they run under Xvfb on Mesa (tools/sanitizers/lsan.supp); the unit lane's filters
       - name: The unit tests under ASan and UBSan
+        # under the job's 300: a step past its timeout fails (an advisory failure), where the job's own
+        # timeout cancels it, and Check counts a cancelled lane as red even while it is advisory
+        timeout-minutes: 270
         env:
           RUN_CORE: ${{ needs.changes.outputs.unit_run_core }}
           RUN_EDITOR: ${{ needs.changes.outputs.unit_run_editor }}
