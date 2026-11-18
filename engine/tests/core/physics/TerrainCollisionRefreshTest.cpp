@@ -81,7 +81,13 @@ namespace {
             TextureData data(MAP, MAP, static_cast<unsigned int>(bytes), ColorFormat::RED16, 1, raw);
             data.setDataOwned(false);
             terrain.heightMap.setData(std::string("terrain-collision-refresh-") + ::testing::UnitTest::GetInstance()->current_test_info()->name(), data);
-            terrain.heightMap.getData().setDataOwned(true);
+            // a second terrain of the test finds the first one's entry of the id pooled, and the
+            // pool keeps it: these pixels go unused
+            if (terrain.heightMap.getData().getData() != raw){
+                std::free(raw);
+            }else{
+                terrain.heightMap.getData().setDataOwned(true);
+            }
             // built: the collider reads the map, not a node tree this scene has no system to make
             terrain.needUpdateTerrain = false;
             terrain.heightMapLoaded = true;
