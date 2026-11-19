@@ -213,7 +213,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: linux
-          max-size: 1.7G
+          max-size: 1.6G
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: Build the editor and the engine sample project
@@ -310,7 +310,7 @@ jobs:
         if: matrix.suite == 'core'
         with:
           lane: unit-${{ matrix.suite }}
-          max-size: 1.5G
+          max-size: 1.4G
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: CMake presets and option errors
@@ -497,7 +497,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_htmlui == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # a cold build (an image change, a lost entry) and the tests ran past 240
+    timeout-minutes: 330
+    permissions:
+      contents: read
+      actions: write  # ccache-save deletes the lane's older entry as soon as it saved the new one (push)
     env:
       JASPER_CI_REPRO: JASPER_HTMLUI_PERF_SLACK=3 tools/build.sh htmlui-tests
     steps:
@@ -509,8 +513,17 @@ jobs:
         id: image
         with:
           target: linux
+      # a Release tree of 2,176 compiles: 1.66 GB of ccache, 28-36 min cold
+      - uses: ./.github/actions/ccache-restore
+        with:
+          lane: htmlui
+          max-size: 1.7G
+          toolchain: ${{ steps.image.outputs.tag }}
       # the performance tests' targets on a shared 4-vCPU runner (compat/PerfFixtures.h)
       - name: jasperengine-htmlui-tests (OpenGL)
+        # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
+        # cancels it, and Check counts a cancelled lane red even while it is advisory
+        timeout-minutes: 300
         env:
           FILTER: ${{ needs.changes.outputs.htmlui_filter }}
           BUILD_ONLY: ${{ github.event_name == 'push' && 'RUN=0 ' || '' }}
@@ -538,6 +551,11 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+      - uses: ./.github/actions/ccache-save
+        if: always()
+        with:
+          lane: htmlui
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -832,13 +850,14 @@ jobs:
     strategy:
       fail-fast: false
       # ccache where it shortens the lane (the 10 GB repository budget, docs/testing.md "CI"): the editor
-      # (0.9 GB working set) and OpenGL with the core tests (1.4 GB); D3D11 and Vulkan build cold
+      # (0.9 GB working set). The engine legs build cold: the lane ends with its slowest leg, and D3D11 and
+      # Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108)
       matrix:
         include:
           - part: editor
             ccache: 1.0G
           - part: engine-glcore
-            ccache: 1.4G
+            ccache: ''
           - part: engine-d3d11
             ccache: ''
           - part: engine-vulkan
@@ -986,7 +1005,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: macos
-          max-size: 1.7G
+          max-size: 1.4G
 
       - name: Editor (arm64)
         run: tools/ci/macos.sh editor
@@ -1070,9 +1089,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           for prefix in plan-inputs- gradle- ccache-linux- ccache-web- ccache-android- ccache-windows-editor- \
-                        ccache-windows-engine-glcore- ccache-macos- ccache-unit-core-; do
+                        ccache-macos- ccache-unit-core- ccache-htmlui-; do
               gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key "$prefix" --sort created_at \
                   --order desc --limit 100 --json id,key --jq '.[1:][] | "\(.id) \(.key)"' |
+                  while read -r id key; do
+                      echo "delete $key"
+                      gh cache delete --repo "$GITHUB_REPOSITORY" "$id"
+                  done
+          done
+          # a lane that gave its entry up (docs/testing.md "CI"): its last one would hold the budget 7 days
+          for prefix in ccache-windows-engine-glcore-; do
+              gh cache list --repo "$GITHUB_REPOSITORY" --key "$prefix" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"' |
                   while read -r id key; do
                       echo "delete $key"
                       gh cache delete --repo "$GITHUB_REPOSITORY" "$id"

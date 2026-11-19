@@ -1020,13 +1020,29 @@ Windows jobs' builds and the core tests' run included.
   otherwise both live until the push's slowest lane ended, and past the 10 GB GitHub evicts the least
   recently used entries of any lane: during push run 44629653601 the repository held 11.7 GB, two
   entries of linux, unit-core and Android, and the plan inputs, the coverage map and the Vulkan SDK
-  were gone. A cap below the working set loses the start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
-  Vulkan SDK, uv and plan caches (about 1.2 GB), and the working sets (PR 26, no precompiled headers)
-  add up to more: linux 1.5 GB, unit-core 1.4, unit-editor 4.0, asan 5.3, htmlui 1.6, smoke 3.5,
-  web 0.5, android 0.6, macOS 1.6, Windows editor 0.9, Windows OpenGL 1.4. So linux, unit-core, web,
-  Android, macOS and the Windows editor and OpenGL jobs keep a whole one (8.6 GB of caps); unit-editor,
-  asan, htmlui and smoke keep none and build cold (their jobs still reuse what an earlier step of the
-  same job compiled), as do Windows D3D11 and Vulkan.
+  were gone. A cap below the working set loses the start of the build, not all of it. The caches
+  share GitHub's 10 GB per repository (the repository's `max_cache_size_gb`); working sets from each
+  lane's `ccache-save` (no precompiled headers), sizes as saved:
+
+  | Cache | Working set (GB) | Cap | Entry |
+  |---|---|---|---|
+  | linux | 1.5 (saved 1.44-1.46) | 1.6G | yes |
+  | unit-core | 1.34 | 1.4G | yes |
+  | macOS | 1.30-1.37 | 1.4G | yes |
+  | htmlui | 1.66 (2,176 compiles, Release) | 1.7G | yes |
+  | Windows editor | 0.91 | 1.0G | yes |
+  | Android | 0.63 | 0.7G | yes |
+  | web | 0.48 | 0.6G | yes |
+  | Gradle, Vulkan SDK, plan inputs, coverage map, MCP timings | 0.73, 0.21, under 0.01 each | | yes |
+  | Windows OpenGL | 1.4 | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
+  | unit-editor | 4.0 | | no |
+  | asan | 5.3 | | no |
+  | smoke | 3.5 | | no |
+
+  At most 8.4 GB of caps plus 0.95 GB of the rest, 9.35 GB (8.8 GB at these working sets). A cache
+  with no entry builds cold, its job still reusing what an earlier step of the same job compiled, as
+  do Windows D3D11 and Vulkan. A lane that gives its entry up has its prefix in the `caches` job's
+  second list, so its last entry goes at once instead of holding the budget for 7 days.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases
