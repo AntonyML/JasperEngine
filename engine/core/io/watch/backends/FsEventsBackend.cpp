@@ -162,7 +162,13 @@ bool FsEventsBackend::openStream(std::string& error) {
         error = "FSEventStreamCreate failed";
         return false;
     }
-    queue = dispatch_queue_create("org.jasperengine.filewatcher", DISPATCH_QUEUE_SERIAL);
+    // A queue without a QoS of its own runs the callbacks at fseventsd's, utility: under CPU
+    // contention they waited behind every default-QoS thread, and a flush, which waits for the
+    // marker's callback on a condition variable (no QoS override), missed its deadline
+    // (FileWatchServiceTests.FlushBarrier/Native: p99 169 ms against 52 ms, with the CPUs
+    // oversubscribed twice on macOS 26). The editor's main thread is what waits.
+    queue = dispatch_queue_create("org.jasperengine.filewatcher",
+                                  dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
     FSEventStreamSetDispatchQueue(stream, queue);
     if (!FSEventStreamStart(stream)) {
         FSEventStreamSetDispatchQueue(stream, nullptr);

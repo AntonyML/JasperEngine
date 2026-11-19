@@ -15,6 +15,10 @@
 #include <condition_variable>
 #include <mutex>
 
+#if defined(JASPERENGINE_WATCH_FSEVENTS)
+#include <sys/qos.h>
+#endif
+
 using namespace jasperengine;
 using namespace jasperengine::test;
 
@@ -397,5 +401,29 @@ TEST(FsEventsStart, WithNoStreamServedTheServicePolls) {
     DeadStreams dead(3);
     ASSERT_TRUE(service.start(dir.path, WatchBackendKind::Native, POLL_INTERVAL));
     expectChangesReported(dir, service, FileWatchService::State::Degraded);
+}
+
+// A flush waits on a condition variable for the marker's callback, which lends that callback no
+// QoS: at fseventsd's own (utility) it waited behind busy threads and the flush missed its deadline
+TEST(FsEventsCallbacks, RunAtUserInitiatedQoS) {
+    struct QosSink : watch::WatchSink {
+        std::atomic<int> lowest{QOS_CLASS_USER_INTERACTIVE + 1};
+        void onRawEvents(std::vector<watch::RawEvent>&&) override {
+            const int qos = static_cast<int>(qos_class_self());
+            for (int seen = lowest; qos < seen && !lowest.compare_exchange_weak(seen, qos);) {
+            }
+        }
+        void onBackendFailed(const std::string&) override {}
+    };
+    WatchTempDir dir;
+    QosSink sink;
+    std::unique_ptr<FileWatcher> watcher = FileWatcher::createNative();
+    std::string error;
+    ASSERT_TRUE(watcher->start(dir.path, sink, error)) << error;
+    writeText(dir.path / "a.txt", "a");
+    ASSERT_TRUE(watcher->flush(timeLimit(ms(2000))));
+    watcher->stop();
+    ASSERT_LE(sink.lowest.load(), QOS_CLASS_USER_INTERACTIVE) << "no callback";
+    EXPECT_GE(sink.lowest.load(), static_cast<int>(QOS_CLASS_USER_INITIATED)) << "lowest callback QoS 0x" << std::hex << sink.lowest.load();
 }
 #endif
