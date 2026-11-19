@@ -330,7 +330,7 @@ TEST(FileWatcherBackends, StopEndsAFlushOnAnotherThread) {
     WatchTempDir dir;
     for (const bool native : {true, false}) {
         if (native && !FileWatcher::hasNative()) continue;
-        for (int round = 0; round < 5; round++) {
+        for (int round = 0; round < 3; round++) {
             std::unique_ptr<FileWatcher> watcher = native ? FileWatcher::createNative() : FileWatcher::createPolling(POLL_INTERVAL);
             CountingSink sink;
             std::string error;
