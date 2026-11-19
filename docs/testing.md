@@ -1050,9 +1050,9 @@ Windows jobs' builds and the core tests' run included.
 ### The nightly and releases
 
 - **Nightly** (`nightly.yml`, 03:17 UTC, or dispatched): the slow configurations (HTML UI on Vulkan
-  and under ASan, TSan, texture formats on lavapipe, the unity build, every fixture's smoke on
-  OpenGL, GLES3 and Vulkan through `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt
-  player parity) and the whole MCP CI suite, which also refreshes the coverage map and the shard
+  and under ASan, TSan, texture formats on lavapipe, the unity builds of the editor, the engine and
+  both unit-test trees, every fixture's smoke on OpenGL, GLES3 and Vulkan through
+  `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt player parity) and the whole MCP CI suite, which also refreshes the coverage map and the shard
   timings. A failure opens or updates the issue
   labelled `nightly`. When `main` moved, it publishes the prerelease `nightly-YYYYMMDD` (the newest 14
   are kept); the slow lanes do not hold it back.
