@@ -210,6 +210,9 @@ namespace {
         }
     };
 
+    // over 5 min under ASan: the PR ASan lane leaves it to the nightly (docs/testing.md, Naming)
+    class TitleArtScenesGpuSlow : public TitleArtScenesGpu {};
+
 }
 
 TEST_F(TitleArtScenesGpu, CompositorScenes) {
@@ -296,7 +299,7 @@ TEST_F(TitleArtScenesGpu, Deterministic) {
 // that dropped a member the material uses (or kept a wrong kind) shades differently. Red control,
 // run by hand (Deviation 58): titleElementVariant without its satin bit, the satin case differs
 // by up to 128/255.
-TEST_F(TitleArtScenesGpu, ElementVariantsDrawTheWholeProgram) {
+TEST_F(TitleArtScenesGpuSlow, ElementVariantsDrawTheWholeProgram) {
     for (uint32_t path : {0u, TITLE_ART_TEST_NO_FLOAT_TARGETS | TITLE_ART_TEST_NO_R16F | TITLE_ART_TEST_NO_RGBA32F}) {
         for (const auto& [name, face] : materialCases()) {
             SCOPED_TRACE(name + (path ? " (rgba8)" : ""));

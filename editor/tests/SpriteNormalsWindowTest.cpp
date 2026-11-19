@@ -1282,8 +1282,10 @@ TEST(SpriteNormalsWindowDeathTest, OrbitStopsWithTheWindow) {
         EXPECT_DOUBLE_EQ(WindowAccess::orbitTime(window), 0.0) << "no source, no result: nothing orbits";
         ASSERT_TRUE(window.openSources({w.file("assets/hero.png")}, error)) << error;
         ASSERT_TRUE(spriteNormalsWindowSettle(window));
+        // settle() can return in the step the result appears, before any shown time has passed
+        WindowAccess::advance(window, 0.5);
         const double t = WindowAccess::orbitTime(window);
-        EXPECT_GT(t, 0.0);
+        EXPECT_GT(t, 0.0) << "open with a result: the orbit runs";
         window.setOpen(false);
         WindowAccess::advance(window, 0.5);
         EXPECT_DOUBLE_EQ(WindowAccess::orbitTime(window), t) << "closed: the orbit stands still";

@@ -22,6 +22,7 @@
 #include "mcp/tools/W4Shared.h"
 #include "texsynth/SynthesisRecipe.h"
 #include "texsynth/SynthesisSession.h"
+#include "util/FileUtils.h"
 #include "util/ProjectChecks.h"
 #include "window/TextureSynthesisWindow.h"
 
@@ -109,7 +110,7 @@ TEST(TextureSynthesisSession, CheckSpecRefusesNonUtf8Paths) {
     const fs::path root = tempProject("utf8");
     std::vector<uint8_t> png;
     ASSERT_TRUE(ts::encodePng(smallImage(16, 2), png));
-    textureSynthesisWriteBytes(root / "assets" / "caf\xE9.png", png);
+    textureSynthesisWriteBytes(root / "assets" / FileUtils::pathFromUtf8("caf\xE9.png"), png);
     textureSynthesisWriteBytes(root / "assets" / "rock.png", png);
 
     ts::SynthesisSpec spec;
@@ -135,11 +136,11 @@ TEST(TextureSynthesisSession, CheckSpecRefusesNonUtf8Paths) {
 
     // a companion found next to the example whose name is not UTF-8: left out with a warning.
     // APFS (macOS) refuses such a name (EILSEQ): there the file cannot exist to be found
-    textureSynthesisWriteBytes(root / "assets" / "rock_normal_\xE9.png", png);
+    textureSynthesisWriteBytes(root / "assets" / FileUtils::pathFromUtf8("rock_normal_\xE9.png"), png);
     std::vector<std::string> warnings;
     ts::autoCompanions(root, spec, warnings);
     EXPECT_TRUE(spec.companions.empty());
-    if (fs::exists(root / "assets" / "rock_normal_\xE9.png")) {
+    if (fs::exists(root / "assets" / FileUtils::pathFromUtf8("rock_normal_\xE9.png"))) {
         ASSERT_EQ(warnings.size(), 1u);
         EXPECT_NE(warnings[0].find("not valid UTF-8"), std::string::npos) << warnings[0];
     } else {
@@ -157,7 +158,7 @@ TEST(TextureSynthesisSession, EncodeOutputsReportsANonUtf8SourceInsteadOfThrowin
     request.examples.push_back(ts::Example::fromImage(smallImage(16, 3)));
     const ts::Result result = ts::synthesize(request);
     ASSERT_EQ(result.status, ts::Status::Ok);
-    request.examples[0].image.path = root / "assets" / "caf\xE9.png";   // recorded in the recipe
+    request.examples[0].image.path = root / "assets" / FileUtils::pathFromUtf8("caf\xE9.png");   // recorded in the recipe
     ts::SynthesisSpec spec;
     spec.examples.push_back({"assets/caf\xE9.png", "", "", true});
     spec.output = "assets/out.png";
@@ -219,7 +220,7 @@ TEST(TextureSynthesisChecks, Latin1NamesAndGarbledRecipesAreReportedNotFatal) {
     // a plain PNG with a Latin-1 name (the check used to abort writing its cache key)
     std::vector<uint8_t> png;
     ASSERT_TRUE(ts::encodePng(smallImage(8, 4), png));
-    textureSynthesisWriteBytes(assets / "caf\xE9.png", png);
+    textureSynthesisWriteBytes(assets / FileUtils::pathFromUtf8("caf\xE9.png"), png);
     // a recipe with a valid CRC but wrong types
     writePngWithText(assets / "garbled.png", R"({"format":1,"mode":"tileable","role":"primary","pathBase":"project","examples":[{"path":5}]})");
     writePngWithText(assets / "role.png", R"({"format":1,"mode":"tileable","role":7,"examples":[{"path":"assets/x.png","sha1":"s"}]})");
@@ -260,7 +261,7 @@ TEST(TextureSynthesisChecks, Latin1NamesAndGarbledRecipesAreReportedNotFatal) {
     std::ofstream(root / ".jasperengine" / "synthesis-check-cache.json", std::ios::trunc) << R"({"version":"1","pngs":[]})";
     EXPECT_NO_THROW(ProjectChecks::checkSynthesisRecipes(root, {}));
     // files mode with the Latin-1 PNG and a garbled one
-    EXPECT_NO_THROW(ProjectChecks::checkSynthesisRecipes(root, {assets / "caf\xE9.png", assets / "garbled.png"}));
+    EXPECT_NO_THROW(ProjectChecks::checkSynthesisRecipes(root, {assets / FileUtils::pathFromUtf8("caf\xE9.png"), assets / "garbled.png"}));
     fs::remove_all(root);
 }
 

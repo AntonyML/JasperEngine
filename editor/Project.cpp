@@ -31,6 +31,7 @@
 #include "diag/HangWatchdog.h"
 #include "util/ProjectChecks.h"
 #include "util/EditorDiagnostics.h"
+#include "util/ThreadCpuTime.h"
 #include "util/ScriptReloadService.h"
 #include "util/ScriptStatus.h"
 #include "util/EditorScripts.h"
@@ -3450,6 +3451,20 @@ const editor::SourceCodeExportSettings& editor::Project::getSourceCodeExportSett
     return sourceCodeExportSettings;
 }
 
+void editor::Project::setTargetPlatforms(uint8_t platforms){
+    platforms &= allTargetPlatforms;
+    targetPlatforms = platforms ? platforms : allTargetPlatforms;
+}
+
+editor::BuildPlatform editor::Project::defaultBuildPlatform() const{
+    if (isTargetPlatform(hostBuildPlatform())) return hostBuildPlatform();
+    for (BuildPlatform platform : {BuildPlatform::Windows, BuildPlatform::MacOS, BuildPlatform::Linux, BuildPlatform::Android,
+                                   BuildPlatform::IOS, BuildPlatform::Web}){
+        if (isTargetPlatform(platform)) return platform;
+    }
+    return hostBuildPlatform();
+}
+
 editor::DesktopExportSettings& editor::Project::getDesktopExportSettings(){
     return desktopExportSettings;
 }
@@ -6506,6 +6521,7 @@ void editor::Project::resetConfigs() {
     buildMethod = "auto";
     packContent = false;
     stripEngineCode = true;
+    targetPlatforms = allTargetPlatforms;
     spriteAtlasMode = "enabled";
     setHtmlUiMsaaSamples(defaultHtmlUiMsaaSamples);
     setPixelsPerUnit(defaultPixelsPerUnit);
@@ -11544,6 +11560,7 @@ void editor::Project::stop(uint32_t sceneId) {
         return;
     }
 
+    const double stopCpuStart = threadCpuMs();
     session->cancelled.store(true, std::memory_order_release);
     sceneProject->playState = ScenePlayState::CANCELLING;
 
@@ -11593,6 +11610,7 @@ void editor::Project::stop(uint32_t sceneId) {
         // All teardown happens on the main/GL thread so that script
         // destructors and engine resource cleanup run with a valid GL context.
         editor::getEditorHost().enqueueMainThreadTask([this, session, sceneId, startupSucceededAtStop]() {
+            const double teardownCpuStart = threadCpuMs();
             SceneProject* mainSceneProject = getScene(sceneId);
             const bool startupSucceeded = session->startupSucceeded.load(std::memory_order_acquire);
 
@@ -11726,12 +11744,19 @@ void editor::Project::stop(uint32_t sceneId) {
             Engine::resetApplicationState();
             editor::Platform::endPlaySimulation();
 
+            session->stopCpuMs += threadCpuMs() - teardownCpuStart;
+            lastStopCpuMs = session->stopCpuMs;
             {
                 std::scoped_lock lock(playSessionMutex);
                 if (activePlaySession == session) activePlaySession.reset();
             }
         });
     }, stopOptions);
+    session->stopCpuMs += threadCpuMs() - stopCpuStart;
+}
+
+double editor::Project::getLastStopCpuMs() const {
+    return lastStopCpuMs;
 }
 
 void editor::Project::stopActivePlay() {

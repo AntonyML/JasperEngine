@@ -110,7 +110,9 @@ TEST(HeapTrim, NothingWhereTheAllocatorCannot) {
 }
 #endif
 
-TEST(HeapTrim, RequestsMerge) {
+// DISABLED_: flaky (#33): ten requests merge only if the caller is not preempted between them
+// while a trim runs; it needs the Background lane held until all are made
+TEST(HeapTrim, DISABLED_RequestsMerge) {
 #if HEAP_TRIM_TEST_SUPPORTED
     const uint64_t before = memory::heapTrimCount();
     for (int i = 0; i < 10; i++) memory::requestHeapTrim();

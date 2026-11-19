@@ -57,9 +57,10 @@ namespace {
             std::ofstream(titles / "win.titleart") << titleart::writeTitleArt(titleart::makeNewTitleArt({800, 400, "WIN", ""}));
             out.sourceSidecar = std::string("{") + SIDECAR_HEAD + ", " + output("win.titleart.png") +
                                 R"(, "languages": {"source": "en", "sets": {"de": "win.titleart.de.bake.json", "fr": null, "ja": "win.titleart.ja.bake.json"}}})";
-            std::ofstream(titles / "win.titleart.bake.json") << out.sourceSidecar;
-            std::ofstream(titles / "win.titleart.de.bake.json") << std::string("{") + SIDECAR_HEAD + ", " + output("win.titleart.de.png") + R"(, "language": "de"})";
-            std::ofstream(titles / "win.titleart.ja.bake.json") << std::string("{") + SIDECAR_HEAD + ", " + output("win.titleart.ja.png") + R"(, "language": "ja"})";
+            // binary: the test compares the sidecar's bytes, which a text-mode stream gives CRLF on Windows
+            std::ofstream(titles / "win.titleart.bake.json", std::ios::binary) << out.sourceSidecar;
+            std::ofstream(titles / "win.titleart.de.bake.json", std::ios::binary) << std::string("{") + SIDECAR_HEAD + ", " + output("win.titleart.de.png") + R"(, "language": "de"})";
+            std::ofstream(titles / "win.titleart.ja.bake.json", std::ios::binary) << std::string("{") + SIDECAR_HEAD + ", " + output("win.titleart.ja.png") + R"(, "language": "ja"})";
             AppSettings::initialize();
             out.project.reset(new Project());
             jasperengine::editor::test::useProjectPaths(out.project.get());

@@ -10,7 +10,7 @@
 //   golden limits.
 // - TitleGenParityGpu.PachislopPresets (AC4): the ported presets against Pachislop's references
 //   (golden/titleart/pachislop/generator/), trimmed and centred, with S80 AC12's metric.
-// - TitleGenGpu.Deterministic (AC5): a preset rendered twice from fresh renderers is identical;
+// - TitleGenGpuSlow.Deterministic (AC5): a preset rendered twice from fresh renderers is identical;
 //   another seed changes it.
 // - TitleGenGpu.FallbackWithinClass (AC6): the RGBA8 path (TITLE_ART_TEST_NO_FLOAT_TARGETS, and
 //   TITLE_ART_TEST_NO_FLOAT_BLEND) agrees with the float path within each definition's class.
@@ -94,6 +94,8 @@ namespace {
     };
 
     class TitleGenParityGpu : public TitleGenGpu {};
+    // over 5 min under ASan: the PR ASan lane leaves it to the nightly (docs/testing.md, Naming)
+    class TitleGenGpuSlow : public TitleGenGpu {};
 
     bool presetRender(const PresetCase& c, GenImage& out, std::string& error, uint32_t flags = 0, const Json& overrides = Json::object()) {
         std::vector<TitleProblem> problems;
@@ -181,7 +183,7 @@ TEST_F(TitleGenParityGpu, PachislopPresets) {
     }
 }
 
-TEST_F(TitleGenGpu, Deterministic) {
+TEST_F(TitleGenGpuSlow, Deterministic) {
     for (const PresetCase& c : genPresetCases()) {
         SCOPED_TRACE(c.type + "/" + c.id);
         GenImage a, b, reseeded;

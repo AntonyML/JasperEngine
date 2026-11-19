@@ -6,6 +6,7 @@
 // the drawn views is tested by TitlePropertyIndexTest.IndexFromViews (the window's tests).
 
 #include "titleart/designer/TitlePropertyIndex.h"
+#include "support/EditorTestSupport.h"
 
 #include <gtest/gtest.h>
 
@@ -177,11 +178,8 @@ TEST(TitlePropertyIndexTest, TierOrderHolds) {
 // R26 / AC31: a query answers in well under 1 ms. Red control: folding the entries' texts per
 // query instead of once in add() takes several milliseconds here.
 TEST(TitlePropertyIndexTest, ThousandEntriesQueryUnderOneMillisecond) {
-#if defined(JASPERENGINE_SANITIZE_ADDRESS) || defined(JASPERENGINE_SANITIZE_THREAD) || defined(JASPERENGINE_SANITIZE_UNDEFINED)
-    constexpr bool checkBudgets = false;
-#else
-    constexpr bool checkBudgets = true;
-#endif
+    // a wall-clock budget: printed always, enforced where perfSlack() asks for it (the benchmark run)
+    const double slack = jasperengine::editor::test::perfSlack();
     const char* labels[] = {"Width", "Color", "Opacity", "Size", "Softness", "Angle", "Distance", "Blur", "Gloss",
                             "Horizontal Scale", "Tracking", "Spread"};
     const char* sections[] = {"Bevel", "Finish", "Outer Glow", "Drop Shadow", "Fill"};
@@ -204,7 +202,7 @@ TEST(TitlePropertyIndexTest, ThousandEntriesQueryUnderOneMillisecond) {
                            (rounds * (sizeof(queries) / sizeof(queries[0])));
     std::printf("[ bench ] Properties search over 1000 entries: %.3f ms per query (budget 1)\n", average);
     EXPECT_GT(found, 0u);
-    if (checkBudgets) {
-        EXPECT_LT(average, 1.0);
+    if (slack > 0.0) {
+        EXPECT_LT(average, 1.0 * slack);
     }
 }

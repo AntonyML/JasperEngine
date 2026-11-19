@@ -53,7 +53,19 @@ GRAPHIC_BACKEND=vulkan UNIT_SUITE=core tools/build.sh unit-tests   # GPU suites 
 GRAPHIC_BACKEND=gles3 UNIT_SUITE=core tools/build.sh unit-tests    # GPU suites in an OpenGL ES 3.2 context (llvmpipe, linux-backends image)
 WERROR=1 tools/build.sh unit-tests
 RUN=0 tools/build.sh unit-tests                             # build only
+UNIT_SHARD=1/2 UNIT_SUITE=editor tools/build.sh unit-tests  # shard 1 of 2 of the selected tests
+UNIT_BUILD_PART=1/2 UNIT_SUITE=editor tools/build.sh unit-tests  # compile part 1 of 2 of the objects, then stop
 ```
+
+`UNIT_SHARD=K/N` runs whole suites, balanced by test count, out of what the filter selects (the filter
+minus the other shards' suites; single tests when there are fewer suites than shards, all of them in
+every shard when there are fewer tests), so no shard runs nothing; an unfiltered shard must reach its
+share of the counts above. `UNIT_BUILD_PART=K/N` compiles every Nth object of the binary's compile
+steps (`ninja -t commands`, sorted), the same part in every tree of one configure, through
+`unit-part.ninja`: `build.ninja` without the libraries and executables CMake makes compiles and code
+generators wait for (order-only), so a part links nothing. CI's editor parts share them through ccache
+(below, "CI"). Both are `tools/ci/unit_split.py`
+(`python3 -I tools/ci/test_unit_split.py`).
 
 The binaries also register with CTest (`ctest --preset linux-ci` in an IDE build), labelled
 `unit`, `gpu` and `slow` by suite name.
@@ -577,6 +589,9 @@ change: add it and rebuild. Test data goes in `engine/tests/core/fixtures/` or
   Run only the CPU suites where no device exists with `--gtest_filter=-*Gpu*`.
 - A suite whose tests take more than 5 s each ends in `Slow`. Any other test stays under 1 s, and
   both binaries' CPU suites together under 60 s on 4 cores.
+- A GPU test that takes more than 5 minutes under ASan goes in a suite ending in `GpuSlow` (a fixture
+  of its own, `class TitleGenGpuSlow : public TitleGenGpu {};`): the PR ASan lane leaves `*GpuSlow*` to
+  the nightly's ASan job, and every other lane runs it as a `*Gpu*` suite (`-*Gpu*` leaves it out too).
 - CTest labels follow the names: `gpu`, `slow`, else `unit`.
 - `ReflectParity.*` compares the reflection codec against frozen data
   (`editor/tests/reflect/parity_golden/`): a field added to a reflection table adds its key there,
@@ -802,10 +817,12 @@ SANITIZE=address,undefined HTMLUI_TEST_ARGS='--gtest_filter=-*Golden*' tools/bui
 `engine/cmake/JasperSanitizers.cmake` adds `-fsanitize=<list> -fno-omit-frame-pointer` to every
 target of the tree, vendored libraries included (uninstrumented code gives TSan false positives),
 plus `-fno-sanitize-recover=undefined -fno-sanitize=vptr` with `undefined` (`function` too on
-Clang), and defines `JASPERENGINE_SANITIZE_ADDRESS`, `_UNDEFINED` and `_THREAD` so tests can relax
-time budgets. `thread` with `address` is a configure error, as are `thread` and `undefined` on MSVC
-and any sanitizer on Emscripten, Android or iOS. On MSVC, `address` switches to the DLL runtime,
-drops `/RTC1`, links with `/INCREMENTAL:NO`, defines `_DISABLE_STL_ANNOTATION`, and copies
+Clang), `-O1` in Debug (at `-O0` the editor test binary's instrumentation data alone passed the
+2 GB that x86-64's small code model reaches, and it did not link), and defines
+`JASPERENGINE_SANITIZE_ADDRESS`, `_UNDEFINED` and `_THREAD` so tests can relax time budgets.
+`thread` with `address` is a configure error, as are `thread` and `undefined` on MSVC and any
+sanitizer on Emscripten, Android or iOS. On MSVC, `address` switches to the DLL runtime, drops `/RTC1`,
+links with `/INCREMENTAL:NO`, defines `_DISABLE_STL_ANNOTATION`, and copies
 `clang_rt.asan_dynamic-x86_64.dll` next to every executable so they start from a plain shell.
 
 A sanitizer `linux` build installs like a normal one, unstripped (the reports need the symbols),
@@ -883,9 +900,18 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   Nothing of ours goes in a precompiled header: it would make every unit depend on it. On in the
   editor tree and in `tools/build.sh`'s Linux development and test trees; off for exports, web,
   Android and players, which therefore check that every source includes what it uses. Not on MSVC
-  (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator.
+  (sources define `_USE_MATH_DEFINES` before `<cmath>`) or with the Xcode generator. CI turns them
+  off everywhere (`JASPERENGINE_PCH=OFF` in `ci.yml`, which `tools/build.sh` and
+  `tools/ci/macos.sh` pass to every tree; set it to reproduce a lane exactly).
 - **ccache** needs `sloppiness = pch_defines,time_macros` to cache a unit that uses a precompiled
   header; `tools/build.sh` sets it in the Linux images (no Linux unit uses `__DATE__`/`__TIME__`).
+  A fresh tree at the same path then hits every unit while the cache holds the header's own entry:
+  a unit hashes the `.gch`, and two GCC builds of one header differ in their bytes, so once that
+  entry is evicted every unit built on it misses (a cache cut to 58 % of a core-tests build gave
+  15 % hits). Measured on the core-tests tree (6 CPUs, 1,900 units, host load 11-23): cold 1,403-1,575 s with
+  precompiled headers, 1,460 s without; warm 126-141 s with, 90 s without. Hence CI's `OFF`. In the
+  Android image ccache names the compiler by `--version`: the NDK is unpacked in each container, so
+  its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
@@ -929,7 +955,7 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `changes` | `tools/ci/plan_lanes.py`: `tools/check-changed`'s plan for the diff, widened by CI's rules below; uploads it as the artifact `plan` |
 | `lint` | the repository's and the workflows' lints |
 | `linux` | `WERROR=1 tools/build.sh linux`; its editor install feeds `mcp` and `smoke` |
-| `unit` (one job per test binary: `core`, `editor`) | `UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>' WERROR=1 tools/build.sh unit-tests`, plus the scalar picking rerun (core) |
+| `unit` (one job per test binary: `core`; `editor-1`, `editor-2`) | `UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>' WERROR=1 tools/build.sh unit-tests`, plus the scalar picking rerun (core); each editor part with `UNIT_SHARD=<k>/2`, after compiling half the objects (`UNIT_BUILD_PART=<k>/2`) and taking the other half from the other part (below) |
 | `asan` | `SANITIZE=address,undefined tools/build.sh unit-tests` |
 | `htmlui` | `JASPER_HTMLUI_PERF_SLACK=3 tools/build.sh htmlui-tests` |
 | `mcp` (one job per shard) | `tools/ci/mcp_shard.sh <k> build/ci-plan`: the CI suite's planned files, `-j 2`, without the fixture project |
@@ -942,8 +968,19 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `check` | the one required status, `Check` (`tools/ci/check_gate.py`): green only when every lane that had to run passed |
 
 `Check` treats a skipped lane as passed only when `changes` said the lane was not needed. A test lane
-that ran no test, an MCP shard that ran no file, or a merge-queue or full run that skipped a lane
-turns it red. A skipped MCP test fails its shard unless `tools/ci/mcp-allowed-skips.txt` lists it
+that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) without a
+report or that ran no test, or a merge-queue or full run that skipped a lane turns it red.
+
+**The editor parts.** The editor tests' build is most of their lane (runs 43737549764 and 43773511699:
+the build 110 and 137 min, the 5,268 tests 7 min). Each part (`tools/ci/plan_lanes.py` `UNIT_PARTS`)
+compiles every other object into the restored ccache, uploads the files that added
+(`unit-editor-<k>-ccache`, a day), and waits for the other part's (`tools/ci/unit_split.py wait`): no
+longer than its own part took, not at all when that part has not started or ended without them, or
+when its own part compiled under a tenth of its objects (a warm cache: the other part's hit too). It
+then builds the binary from the cache, compiling whatever it did not get, and runs its shard. Only
+the first part saves the `unit-editor` cache and the deps dump on push; the second only compiles its
+objects there. The hits need a configure whose objects do not depend on a precompiled header built in
+the job: a GCC `.gch` is not the same bytes twice, so a unit built on the other part's misses. A skipped MCP test fails its shard unless `tools/ci/mcp-allowed-skips.txt` lists it
 with the reason and the lane where it does run; a new entry is reviewed like any change.
 PR and merge-queue shards run without `JASPER_SLOW_BUILD`: the tests that build a real game (an hour
 or more each, cold) skip there and run in the nightly, and the smoke lane builds and launches games
@@ -979,9 +1016,18 @@ Windows jobs' builds and the core tests' run included.
   project, or is `CI_EXCLUDED`) is listed under "not run in CI"; `MCP_SUITE=all` locally covers it.
 - **Push to `main`** builds only: its tests ran in the queue. It saves the caches (ccache per lane,
   the deps dumps `changes` plans from): a PR restores what `main` saved, never what the queue did.
-  The caps (`max-size` in `ci.yml`) share GitHub's 10 GB per repository: of the Windows jobs only the
-  editor's (1.2 GB, a full editor and tests build) and OpenGL's (0.15 GB) keep one; D3D11 and Vulkan
-  build cold within the editor job's time.
+- **ccache in CI**: a build runs with no size limit (a cleanup in the middle of a build evicts the
+  restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
+  file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
+  and prints the rest, the lane's working set, on every run; on `main` it cuts that to the lane's cap
+  (`max-size` in `ci.yml`), oldest-used first, and saves it. A cap below the working set loses the
+  start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
+  Vulkan SDK, uv and plan caches (about 1.2 GB), and the working sets (PR 26, no precompiled headers)
+  add up to more: linux 1.5 GB, unit-core 1.4, unit-editor 4.0, asan 5.3, htmlui 1.6, smoke 3.5,
+  web 0.5, android 0.6, macOS 1.6, Windows editor 0.9, Windows OpenGL 1.4. So linux, unit-core, web,
+  Android, macOS and the Windows editor and OpenGL jobs keep a whole one (8.6 GB of caps); unit-editor,
+  asan, htmlui and smoke keep none and build cold (their jobs still reuse what an earlier step of the
+  same job compiled), as do Windows D3D11 and Vulkan.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases
@@ -1053,6 +1099,18 @@ From the first PR runs (cold): the core tests ran in 65 min on llvmpipe, the edi
 in the editor leg; under ASan the `*GpuSlow` suites took 135 of 167 test minutes (hence their
 nightly job); an MCP shard of about 330 tests took 24 to 86 min without the game builds, and four
 game-building tests took 18 to 91 min each, cold.
+
+`unit (editor)` in one job, ccache restored but missing (2026-11-15/16): run 43737549764 123 min (setup
+4, build 110, all 5,268 tests 7), run 43773511699 141 min (setup 4, build 137, 39 tests 5 s). The tests
+spread evenly (the longest 31 s), so only splitting the build halves the lane: two parts, about
+65 min each cold (setup, half the build, the merge and links, half the tests), and about the one job's
+time warm.
+
+The ASan lane (`-*GpuSlow*`): CI's core runs stopped at 2,760 tests (`VoxelPhysics.BudgetPerTick`), so
+the rest is estimated from the non-ASan times (GPU tests 1.9 times slower under ASan, CPU tests 7.0,
+from the tests both measured): the core tests about 132 min, of which five GPU tests 37 min, now
+`*GpuSlow` (a full local ASan run, a loaded host: 74 of 222 min); `VoxelSoakSlow.IncrementalEqualsRebuild`
+(about 10 min, CPU) stays. The editor tests under ASan: 62 min for the 4,308 a local run reached.
 
 ### Pins
 

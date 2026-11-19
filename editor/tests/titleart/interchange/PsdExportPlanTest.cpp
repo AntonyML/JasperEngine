@@ -203,17 +203,20 @@ TEST(PsdExportPlan, StreamingMatchesTheBatchUnderTheMemoryCap) {
 
         const fs::path dir = fs::temp_directory_path() / ("je_psd_stream_" + std::to_string(::getpid()) + "_" + std::to_string(bits));
         fs::create_directories(dir);
-        PsdChannelSpool spool;
-        ASSERT_TRUE(spool.open(dir / "x.spool", error)) << error;
-        PsdAssembler assembler(plan, bits, 72, W, H, &spool);
-        for (size_t i = 0; i < renders.size(); i++) ASSERT_TRUE(assembler.add((int)i, renders[i], error)) << error;
-        ASSERT_TRUE(assembler.complete(error)) << error;
-        ASSERT_TRUE(writePsdFile(assembler.document(), spool, dir / "x.psd", error)) << error;
-        std::ifstream in(dir / "x.psd", std::ios::binary);
-        const std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        EXPECT_EQ(file, batchBytes) << bits << "-bit: the same file";
-        EXPECT_LE(assembler.peakBytes(), cap) << bits << "-bit: peak " << assembler.peakBytes() << " of " << plan.jobs.size() << " renders";
-        EXPECT_GT(plan.jobs.size() * (size_t)W * H * 8, cap) << "the plan is large enough for the cap to mean something";
+        {
+            // the spool and the reader closed before the folder goes: an open file can't be removed on Windows
+            PsdChannelSpool spool;
+            ASSERT_TRUE(spool.open(dir / "x.spool", error)) << error;
+            PsdAssembler assembler(plan, bits, 72, W, H, &spool);
+            for (size_t i = 0; i < renders.size(); i++) ASSERT_TRUE(assembler.add((int)i, renders[i], error)) << error;
+            ASSERT_TRUE(assembler.complete(error)) << error;
+            ASSERT_TRUE(writePsdFile(assembler.document(), spool, dir / "x.psd", error)) << error;
+            std::ifstream in(dir / "x.psd", std::ios::binary);
+            const std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            EXPECT_EQ(file, batchBytes) << bits << "-bit: the same file";
+            EXPECT_LE(assembler.peakBytes(), cap) << bits << "-bit: peak " << assembler.peakBytes() << " of " << plan.jobs.size() << " renders";
+            EXPECT_GT(plan.jobs.size() * (size_t)W * H * 8, cap) << "the plan is large enough for the cap to mean something";
+        }
         fs::remove_all(dir);
     }
 }

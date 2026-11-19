@@ -221,6 +221,31 @@ class GateTest(unittest.TestCase):
         self.assertRegex(out, r"(?m)^unit-core\s+success\s+ok \(40 tests\)$")
         self.assertRegex(out, r"(?m)^unit-editor\s+success\s+FAIL: 0 tests ran$")
 
+    def test_every_editor_part_must_run_tests(self):
+        # the editor tests run in two jobs (unit-editor-1, -2): each must report tests, and pass
+        p = plan()
+        p["unit_jobs"] = ["core", "editor-1", "editor-2"]
+
+        def reps(**ran):
+            out = [r for r in reports_for(p) if r["lane"] != "unit"]
+            for job, n in ran.items():
+                out.append({"lane": f"unit-{job.replace('_', '-')}", "status": "success", "sha": "", "commands": [],
+                            "failures": [], "artifacts": [], "tests": {"ran": n, "failed": 0, "skipped": 0, "disabled": 0}})
+            return out
+
+        status, out = self.gate(needs_for(p), p, reps(core=40, editor_1=30, editor_2=31))
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^unit-editor-2\s+success\s+ok \(31 tests\)$")
+        status, out = self.gate(needs_for(p), p, reps(core=40, editor_1=30, editor_2=0))
+        self.assertEqual(status, 1, out)
+        self.assertRegex(out, r"(?m)^unit-editor-2\s+success\s+FAIL: 0 tests ran$")
+        status, out = self.gate(needs_for(p), p, reps(core=40, editor_1=30))
+        self.assertEqual(status, 1, out)
+        self.assertRegex(out, r"(?m)^unit-editor-2\s+success\s+FAIL: no report, so no proof tests ran$")
+        # a part that failed fails the unit job, which the matrix's result already says
+        status, out = self.gate(needs_for(p, unit="failure"), p, reps(core=40, editor_1=30, editor_2=31))
+        self.assertEqual(status, 1, out)
+
     def test_zero_test_mcp_shard_fails(self):
         p = plan()
         status, out = self.gate(needs_for(p), p, reports_for(p, ran={"mcp-2": 0}))

@@ -7,6 +7,7 @@
 #include "search/AssetQuery.h"
 
 #include "search/FakeAssetIndex.h"
+#include "support/EditorTestSupport.h"
 
 #include <gtest/gtest.h>
 
@@ -125,11 +126,8 @@ TEST(AssetQuery, RegisteredTokenWorks) {
 }
 
 TEST(AssetSearchSlow, FiftyThousandUnder30ms) {
-#if defined(JASPERENGINE_SANITIZE_ADDRESS) || defined(JASPERENGINE_SANITIZE_THREAD) || defined(JASPERENGINE_SANITIZE_UNDEFINED)
-    constexpr bool checkBudgets = false;
-#else
-    constexpr bool checkBudgets = true;
-#endif
+    // wall-clock budgets: printed always, enforced where perfSlack() asks for them (the benchmark run)
+    const double slack = jasperengine::editor::test::perfSlack();
     FakeAssetIndex index;
     index.records.reserve(50000);
     const char* types[] = {"texture", "model", "material", "audio", "prefab"};
@@ -153,8 +151,8 @@ TEST(AssetSearchSlow, FiftyThousandUnder30ms) {
         }
         std::printf("[ bench ] Project search \"%s\" over 50000 assets: %.2f ms, %zu matches (budget 30, CI 60)\n", text, best, matches);
         EXPECT_GT(matches, 0u) << text;
-        if (checkBudgets) {
-            EXPECT_LE(best, 60.0) << text;
+        if (slack > 0.0) {
+            EXPECT_LE(best, 60.0 * slack) << text;
         }
     }
 }

@@ -93,10 +93,11 @@ TEST_F(TitleArtRuntimeGpu, RealtimeMatchesBake) {
     RenderRequest bake;
     bake.doc = doc;
     const Pixels baked = render(*renderer, bake);
-    // the same state through the scheduler with a small budget, so it slices
+    // the same state through the scheduler with a small budget, so it slices (the renderer made
+    // first: the title's images are its pool's targets, given back when the title goes)
+    auto fresh = makeRenderer();
     TitleArtLive live("assets/test.titleart", TitleArtRenderMode::REALTIME, doc, 1);
     live.setState(runtimeState(), 1, {});
-    auto fresh = makeRenderer();
     const int frames = runtimeRunFrames(live, makeRendererJobFactory(*fresh, &assets), 300);
     ASSERT_TRUE(live.front().valid()) << live.status().error;
     EXPECT_GT(frames, 1) << "the render was spread over frames";
