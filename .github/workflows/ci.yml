@@ -196,6 +196,9 @@ jobs:
     if: needs.changes.outputs.run_linux == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    permissions:
+      contents: read
+      actions: write  # ccache-save deletes the lane's older entry as soon as it saved the new one (push)
     env:
       JASPER_CI_REPRO: WERROR=1 tools/build.sh linux
     steps:
@@ -261,6 +264,7 @@ jobs:
         if: always()
         with:
           lane: linux
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -281,7 +285,9 @@ jobs:
     timeout-minutes: 300
     permissions:
       contents: read
-      actions: read   # the parts look for each other's artifact and job (tools/ci/unit_split.py wait)
+      # the parts look for each other's artifact and job (tools/ci/unit_split.py wait); ccache-save deletes
+      # the lane's older entry as soon as it saved the new one (push)
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -429,6 +435,7 @@ jobs:
         if: always() && env.UNIT_LEAD == 'true' && matrix.suite == 'core'
         with:
           lane: unit-${{ matrix.suite }}
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -678,6 +685,9 @@ jobs:
     if: needs.changes.outputs.run_web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: write  # ccache-save deletes the lane's older entry as soon as it saved the new one (push)
     env:
       JASPER_CI_REPRO: |-
         tools/build.sh web
@@ -736,6 +746,7 @@ jobs:
         if: always()
         with:
           lane: web
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -751,6 +762,9 @@ jobs:
     if: needs.changes.outputs.run_android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: write  # ccache-save deletes the lane's older entry as soon as it saved the new one (push)
     env:
       JASPER_CI_REPRO: tools/build.sh android
     steps:
@@ -792,6 +806,7 @@ jobs:
         if: always()
         with:
           lane: android
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -811,6 +826,9 @@ jobs:
     # a cold editor build (about 230 min, as after a cache-key change) plus the advisory editor-test
     # step's own 75: past the job's limit GitHub cancels the job, and Check counts it red
     timeout-minutes: 330
+    permissions:
+      contents: read
+      actions: write  # ccache-save deletes the lane's older entry as soon as it saved the new one (push)
     strategy:
       fail-fast: false
       # ccache where it shortens the lane (the 10 GB repository budget, docs/testing.md "CI"): the editor
@@ -899,6 +917,7 @@ jobs:
         if: always() && matrix.ccache != ''
         with:
           lane: windows-${{ matrix.part }}
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -948,6 +967,9 @@ jobs:
     runs-on: macos-latest
     # cold (no ccache yet): editor 81 min, engine and core tests 63, CPU tests 18, then compile-smoke
     timeout-minutes: 300
+    permissions:
+      contents: read
+      actions: write  # ccache-save deletes the lane's older entry as soon as it saved the new one (push)
     env:
       JASPER_CI_REPRO: tools/ci/macos.sh
     steps:
@@ -984,6 +1006,7 @@ jobs:
         if: always()
         with:
           lane: macos
+          prune: 'true'
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -1018,7 +1041,8 @@ jobs:
 
   # -------------------------------------------------------------- Caches ---
   # Push to main: the plan inputs from the unit and htmlui lanes' deps dumps, then one live entry per
-  # cache (§10.2: LRU must never evict one lane for another). Housekeeping, not a lane: Check skips it.
+  # cache (§10.2: LRU must never evict one lane for another; each ccache-save prunes its lane's older
+  # entry already, this catches a failed prune). Housekeeping, not a lane: Check skips it.
   caches:
     name: caches
     needs: [linux, unit, asan, htmlui, smoke, web, android, windows, macos]

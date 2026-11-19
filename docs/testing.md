@@ -1015,8 +1015,12 @@ Windows jobs' builds and the core tests' run included.
   restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
   file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
   and prints the rest, the lane's working set, on every run; on `main` it cuts that to the lane's cap
-  (`max-size` in `ci.yml`), oldest-used first, and saves it. A cap below the working set loses the
-  start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
+  (`max-size` in `ci.yml`), oldest-used first, saves it and deletes the lane's older entry (`prune`;
+  the `caches` job, after every lane, deletes them again). Each lane's old and new entries would
+  otherwise both live until the push's slowest lane ended, and past the 10 GB GitHub evicts the least
+  recently used entries of any lane: during push run 44629653601 the repository held 11.7 GB, two
+  entries of linux, unit-core and Android, and the plan inputs, the coverage map and the Vulkan SDK
+  were gone. A cap below the working set loses the start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
   Vulkan SDK, uv and plan caches (about 1.2 GB), and the working sets (PR 26, no precompiled headers)
   add up to more: linux 1.5 GB, unit-core 1.4, unit-editor 4.0, asan 5.3, htmlui 1.6, smoke 3.5,
   web 0.5, android 0.6, macOS 1.6, Windows editor 0.9, Windows OpenGL 1.4. So linux, unit-core, web,
