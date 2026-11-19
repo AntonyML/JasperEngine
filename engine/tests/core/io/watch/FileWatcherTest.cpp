@@ -11,6 +11,7 @@
 #include "jobs/detail/TimedWait.h"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 
@@ -308,6 +309,48 @@ TEST(FileWatcherRules, BackendNames) {
     EXPECT_EQ(kind, WatchBackendKind::Off);
     EXPECT_FALSE(parseWatchBackendKind("inotify", kind));
     EXPECT_STREQ(watchBackendKindName(WatchBackendKind::Native), "native");
+}
+
+// The service stops a linked folder's backend on its dispatcher while a flush on another thread
+// may be using it (FileWatchServiceTests.SeesChangesThroughLinkedFolders): the stop waits for that
+// flush or ends it, and no sink call follows it
+TEST(FileWatcherBackends, StopEndsAFlushOnAnotherThread) {
+    struct CountingSink : watch::WatchSink {
+        std::atomic<bool> stopped{false};
+        std::atomic<int> afterStop{0};
+        void onRawEvents(std::vector<watch::RawEvent>&&) override {
+            if (stopped) afterStop++;
+        }
+        void onBackendFailed(const std::string&) override {}
+    };
+    WatchTempDir dir;
+    for (const bool native : {true, false}) {
+        if (native && !FileWatcher::hasNative()) continue;
+        for (int round = 0; round < 5; round++) {
+            std::unique_ptr<FileWatcher> watcher = native ? FileWatcher::createNative() : FileWatcher::createPolling(POLL_INTERVAL);
+            CountingSink sink;
+            std::string error;
+            ASSERT_TRUE(watcher->start(dir.path, sink, error)) << error;
+            std::atomic<bool> flushing{true};
+            std::atomic<int> flushes{0};
+            std::thread flusher([&]() {
+                for (int i = 0; flushing; i++) {
+                    writeText(dir.path / ("f" + std::to_string(i % 4) + ".txt"), std::to_string(i));
+                    watcher->flush(timeLimit(ms(500)));
+                    flushes++;
+                }
+            });
+            EXPECT_TRUE(waitFor([&]() { return flushes.load() >= 2; }, timeLimit(ms(3000)))) << watcher->name();
+            // into the next flush
+            std::this_thread::sleep_for(ms(1 + round));
+            watcher->stop();
+            sink.stopped = true;
+            flushing = false;
+            flusher.join();
+            EXPECT_FALSE(watcher->flush(ms(50))) << watcher->name() << ": a stopped backend has nothing to flush";
+            EXPECT_EQ(sink.afterStop.load(), 0) << watcher->name();
+        }
+    }
 }
 
 #if defined(JASPERENGINE_WATCH_FSEVENTS)
