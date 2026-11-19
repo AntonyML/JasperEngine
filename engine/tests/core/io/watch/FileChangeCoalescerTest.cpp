@@ -239,6 +239,30 @@ TEST_F(FileChangeCoalescerTests, RemovalWaitsForTheDeleteHold) {
     EXPECT_EQ(kinds(coalescer.take(now)), "removed:/p/a.png");
 }
 
+TEST_F(FileChangeCoalescerTests, UnderPollingARemovalWaitsForTheNextScanOfItsBackend) {
+    coalescer.setRemovalsWaitForScan(true);
+    env.existing("/p/a.png", 10, 100, 7);
+    env.existing("/p/b.png", 10, 100, 9);
+    env.disk.erase("/p/a.png");
+    env.disk.erase("/p/b.png");
+    // the project's scan 1 reports both gone, then ends
+    raw(Type::Removed, "/p/a.png");
+    raw(Type::Removed, "/p/b.png");
+    raw(Type::ScanDone, "");
+    EXPECT_EQ(kinds(run(2000)), "") << "no time lets a removal go";
+    EXPECT_EQ(coalescer.nextDeadline(), Clock::time_point::max());
+    EXPECT_TRUE(coalescer.awaitingScan());
+    // a linked folder's scan is not the project's
+    coalescer.add(watch::RawEvent{Type::ScanDone, {}, {}, false, 1}, now);
+    EXPECT_EQ(kinds(run()), "");
+    // scan 2 sees a.png back
+    env.disk["/p/a.png"] = FakeEnvironment::file(12, 500, 8);
+    raw(Type::Created, "/p/a.png");
+    raw(Type::ScanDone, "");
+    EXPECT_EQ(kinds(run()), "removed:/p/b.png,modified:/p/a.png");
+    EXPECT_FALSE(coalescer.awaitingScan());
+}
+
 TEST_F(FileChangeCoalescerTests, NothingBeforeTheQuietWindowThenTwoStats) {
     env.existing("/p/a.png", 10, 100, 7);
     env.disk["/p/a.png"] = FakeEnvironment::file(20, 200, 7);
