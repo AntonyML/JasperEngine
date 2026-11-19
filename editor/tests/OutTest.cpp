@@ -12,13 +12,13 @@ using namespace jasperengine::editor;
 
 namespace {
     // the editor's store (main() starts it in the editor)
-    void ensureLogging() {
+    void outEnsureLogging() {
         if (!Out::memorySinkId()) Out::startLogging();
     }
 }
 
 TEST(Out, ReadAfterLogOnAnyThread) {
-    ensureLogging();
+    outEnsureLogging();
     const uint64_t cursor = Out::lastLogId();
     std::thread worker([]() { Out::error("worker error %d", 42); });
     worker.join();
@@ -30,7 +30,7 @@ TEST(Out, ReadAfterLogOnAnyThread) {
 }
 
 TEST(Out, TypesFromLevelFlagsAndCategory) {
-    ensureLogging();
+    outEnsureLogging();
     const uint64_t cursor = Out::lastLogId();
     Out::info("an info");
     Out::success("a success");
@@ -50,7 +50,7 @@ TEST(Out, TypesFromLevelFlagsAndCategory) {
 }
 
 TEST(Out, ClearKeepsCursors) {
-    ensureLogging();
+    outEnsureLogging();
     Out::info("before clear");
     const uint64_t cursor = Out::lastLogId();
     Out::clearConsole();
