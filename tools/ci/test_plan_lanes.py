@@ -132,9 +132,11 @@ class Rules(unittest.TestCase):
 
     def test_push_runs_the_builds_only(self):
         r = decide("push", plan(["engine/core/Foo.cpp"], mcp=["test_a.py"]))
-        self.assertEqual(runs(r), {"changes", "unit", "asan", "htmlui", "smoke", *pl.PLATFORM_LANES})
+        self.assertEqual(runs(r), {"changes", "unit", "htmlui", "smoke", *pl.PLATFORM_LANES})
         self.assertIn("build only", r["lanes"]["unit"]["why"])
         self.assertEqual(r["mcp"]["mode"], "none")
+        # ASan keeps no ccache entry (the 10 GB budget): a build on push would warm nothing
+        self.assertIn("no ccache entry", r["lanes"]["asan"]["why"])
 
     def test_push_warms_the_smoke_cache_when_an_export_reads_the_change(self):
         # only main saves caches, so a smoke lane that never runs on push never warms its ccache
@@ -175,12 +177,14 @@ class Rules(unittest.TestCase):
         lines = pl.github_output(doc, r["unit_run"]).splitlines()
         keys = [line.split("=", 1)[0] for line in lines]
         self.assertEqual(keys, ["full", *[f"run_{n}" for n in pl.LANES], "unit_filter_core", "unit_filter_editor",
-                                "unit_run_core", "unit_run_editor", "unit_jobs", "htmlui_filter", "mcp_shards"])
+                                "unit_run_core", "unit_run_editor", "unit_jobs", "asan_jobs", "htmlui_filter", "mcp_shards"])
         self.assertIn("unit_filter_core=Foo.*:*/Foo.*:Foo/*.*", lines)
         self.assertIn('mcp_shards=["1","2"]', lines)
         self.assertIn("unit_run_editor=false", lines)
         # the unit lane's matrix: one job per planned test binary, the editor's in two
         self.assertIn('unit_jobs=[{"job":"core","suite":"core","part":"","other":""}]', lines)
+        # the asan lane's matrix: one job per planned test binary
+        self.assertIn('asan_jobs=[{"job":"core","suite":"core"}]', lines)
         doc["mcp"]["shards"] = []
         self.assertIn("mcp_shards=[]", pl.github_output(doc, r["unit_run"]).splitlines())
         both = [line for line in pl.github_output(doc, {"core": True, "editor": True}).splitlines() if line.startswith("unit_jobs=")]
@@ -188,6 +192,11 @@ class Rules(unittest.TestCase):
             {"job": "core", "suite": "core", "part": "", "other": ""},
             {"job": "editor-1", "suite": "editor", "part": "1/2", "other": "2"},
             {"job": "editor-2", "suite": "editor", "part": "2/2", "other": "1"}])
+        both = [line for line in pl.github_output(doc, {"core": True, "editor": True}).splitlines() if line.startswith("asan_jobs=")]
+        self.assertEqual(json.loads(both[0].split("=", 1)[1]), [{"job": "core", "suite": "core"}, {"job": "editor", "suite": "editor"}])
+        # a lane that does not run has no jobs (push builds the unit trees, not ASan's)
+        doc["lanes"] = dict(doc["lanes"], asan={"run": False, "why": "push"})
+        self.assertIn("asan_jobs=[]", pl.github_output(doc, {"core": True, "editor": True}).splitlines())
 
     def test_unit_jobs(self):
         # the editor tests' build is most of their lane (CI runs 43737549764: 110 of 123 min), so two
@@ -195,6 +204,13 @@ class Rules(unittest.TestCase):
         self.assertEqual(pl.unit_job_names({"core": True, "editor": True}), ["core", "editor-1", "editor-2"])
         self.assertEqual(pl.unit_job_names({"core": False, "editor": True}), ["editor-1", "editor-2"])
         self.assertEqual(pl.unit_job_names({"core": False, "editor": False}), [])
+
+    def test_asan_jobs(self):
+        # one job per test binary: in one job the cold core build, its tests and the editor's build left
+        # the editor's tests no time (merge-queue runs 44582666848, 44487933891)
+        self.assertEqual(pl.asan_job_names({"core": True, "editor": True}), ["core", "editor"])
+        self.assertEqual(pl.asan_job_names({"core": False, "editor": True}), ["editor"])
+        self.assertEqual(pl.asan_job_names({"core": False, "editor": False}), [])
 
 
 TEST_FILE = """CI = True
@@ -332,6 +348,7 @@ class Runs(unittest.TestCase):
         self.assertEqual(doc["mcp"]["shards"], ["1"])
         # what check_gate and the report expect a report from
         self.assertEqual(doc["unit_jobs"], ["core", "editor-1", "editor-2"])
+        self.assertEqual(doc["asan_jobs"], ["core", "editor"])
 
     def test_no_plan_fails_open_and_an_unlistable_suite_fails_the_lane(self):
         head = self.commit("engine/core/Foo.cpp", "int foo = 2;\n")

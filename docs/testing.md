@@ -951,7 +951,7 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `lint` | the repository's and the workflows' lints |
 | `linux` | `WERROR=1 tools/build.sh linux`; its editor install feeds `mcp` and `smoke` |
 | `unit` (one job per test binary: `core`; `editor-1`, `editor-2`) | `UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>' WERROR=1 tools/build.sh unit-tests`, plus the scalar picking rerun (core); each editor part with `UNIT_SHARD=<k>/2`, after compiling half the objects (`UNIT_BUILD_PART=<k>/2`) and taking the other half from the other part (below) |
-| `asan` | `SANITIZE=address,undefined tools/build.sh unit-tests` |
+| `asan` (one job per test binary: `core`, `editor`) | `SANITIZE=address,undefined UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>-*GpuSlow*' tools/build.sh unit-tests`, the unit lane's filter without the `*GpuSlow*` suites (the nightly runs them under ASan) |
 | `htmlui` | `JASPER_HTMLUI_PERF_SLACK=3 tools/build.sh htmlui-tests` |
 | `mcp` (one job per shard) | `tools/ci/mcp_shard.sh <k> build/ci-plan`: the CI suite's planned files, `-j 2`, without the fixture project |
 | `smoke` | `SMOKE_METHOD=compile tools/smoke-test.sh tools/fixtures/post-processing`, the prebuilt `tools/fixtures/unified-lighting` and a project from each template |
@@ -963,8 +963,9 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `check` | the one required status, `Check` (`tools/ci/check_gate.py`): green only when every lane that had to run passed |
 
 `Check` treats a skipped lane as passed only when `changes` said the lane was not needed. A test lane
-that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) without a
-report or that ran no test, or a merge-queue or full run that skipped a lane turns it red.
+that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) or an
+ASan job (`asan-core`, `asan-editor`) without a report or that ran no test, or a merge-queue or full
+run that skipped a lane turns it red.
 
 **The editor parts.** The editor tests' build is most of their lane (runs 43737549764 and 43773511699:
 the build 110 and 137 min, the 5,268 tests 7 min). Each part (`tools/ci/plan_lanes.py` `UNIT_PARTS`)
@@ -994,7 +995,8 @@ Windows jobs' builds and the core tests' run included.
 | `changes`, `Check` | yes | yes | yes | yes |
 | `lint` | unless every path is one nothing reads | same | no | yes |
 | platform builds | when anything that builds changed | yes | yes, to warm the caches | yes |
-| `unit`, `asan`, `htmlui` | the suites the plan selects | all, unfiltered | no | all |
+| `unit`, `htmlui` | the suites the plan selects | all, unfiltered | build only (the caches, the deps dumps) | all |
+| `asan` | the unit lane's suites | all, unfiltered | no (it keeps no cache entry) | all |
 | `mcp` | the planned CI-suite files | the planned files, over the group's diff against `main` | no | the whole CI suite |
 | `smoke` | when a game-building path changed | yes | no | yes |
 
@@ -1036,7 +1038,7 @@ Windows jobs' builds and the core tests' run included.
   | Gradle, Vulkan SDK, plan inputs, coverage map, MCP timings | 0.73, 0.21, under 0.01 each | | yes |
   | Windows OpenGL | 1.4 | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
   | unit-editor | 4.0 | | no |
-  | asan | 5.3 | | no |
+  | asan-core, asan-editor | 5.3 both (one job, PR 26) | | no: neither binary's fits what is left, so ASan does not run on push |
   | smoke | 3.5 | | no |
 
   At most 8.4 GB of caps plus 0.95 GB of the rest, 9.35 GB (8.8 GB at these working sets). A cache
@@ -1126,6 +1128,10 @@ the rest is estimated from the non-ASan times (GPU tests 1.9 times slower under 
 from the tests both measured): the core tests about 132 min, of which five GPU tests 37 min, now
 `*GpuSlow` (a full local ASan run, a loaded host: 74 of 222 min); `VoxelSoakSlow.IncrementalEqualsRebuild`
 (about 10 min, CPU) stays. The editor tests under ASan: 62 min for the 4,308 a local run reached.
+In one job (merge-queue runs 44416194181, 44487933891, 44582664923, 44582666848) the cold core build took
+79-116 min, the core tests 90 and the editor's build 168-175, so the 270-min step ended before the
+editor tests: hence a job per binary, cold about 3-3.5 h for core and 3.7-4.6 h for the editor (its
+tests estimated).
 
 ### Pins
 

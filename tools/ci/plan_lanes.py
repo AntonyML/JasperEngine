@@ -13,8 +13,9 @@ applies CI's stricter rules:
 - MCP runs the planned files that are in the CI suite (run_tests.ci_files()); the rest are listed
   under not_in_ci with their reason. A planned whole suite is the CI suite;
 - merge_group: every lane, unit and HTML UI unfiltered, MCP planned over the group's diff (D1);
-- push: the build lanes only (caches and plan inputs; the tests ran in the merge queue), and smoke when
-  a game's export reads the change, so its Compile builds' ccache stays warm;
+- push: the build lanes only (caches and plan inputs; the tests ran in the merge queue), not ASan, which
+  keeps no cache entry, and smoke when a game's export reads the change, so its Compile builds' ccache
+  stays warm;
 - full (workflow_dispatch with full: true): every lane, the whole MCP CI suite;
 - nightly: as full, and MCP also runs the CI_EXCLUDED files CI can run (NIGHTLY_LEFT_OUT says which
   it cannot);
@@ -257,8 +258,9 @@ def _decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_
     if event == "push":
         for name in PLATFORM_LANES:
             lane(name, True, f"push to main: the build keeps the caches warm ({first} changed)")
-        for name in ("unit", "asan", "htmlui"):
+        for name in ("unit", "htmlui"):
             lane(name, True, "push to main: build only (the caches and the deps dumps); its tests ran in the merge queue")
+        lane("asan", False, "push to main: ASan keeps no ccache entry (the 10 GB budget) and its tests ran in the merge queue")
         for name in ("lint", "mcp"):
             lane(name, False, "push to main: its tests ran in the merge queue")
         # only main saves caches: the games' Compile builds would otherwise never find a warm ccache
@@ -356,6 +358,21 @@ def unit_job_names(unit_run: dict) -> list[str]:
     return [j["job"] for j in unit_jobs(unit_run)]
 
 
+def asan_jobs(unit_run: dict) -> list[dict]:
+    """The asan lane's matrix: a job per planned test binary (in one job the cold core build, its tests
+    and the editor's build left the editor's tests no time: merge-queue runs 44582666848, 44487933891)."""
+    return [{"job": suite, "suite": suite} for suite in ("core", "editor") if unit_run.get(suite)]
+
+
+def asan_job_names(unit_run: dict) -> list[str]:
+    return [j["job"] for j in asan_jobs(unit_run)]
+
+
+def planned_asan_run(lanes: dict, unit_run: dict) -> dict:
+    """The binaries the asan lane runs: the unit lane's, when the asan lane runs at all."""
+    return unit_run if lanes.get("asan", {}).get("run") else {}
+
+
 def github_output(doc: dict, unit_run: dict) -> str:
     lines = [f"full={'true' if doc['full'] else 'false'}"]
     lines += [f"run_{name}={'true' if entry['run'] else 'false'}" for name, entry in doc["lanes"].items()]
@@ -364,6 +381,8 @@ def github_output(doc: dict, unit_run: dict) -> str:
               f"unit_run_editor={'true' if unit_run['editor'] else 'false'}",
               # the unit lane's matrix: one job per planned test binary, the editor's in parts, side by side
               f"unit_jobs={json.dumps(unit_jobs(unit_run), separators=(',', ':'))}",
+              # the asan lane's matrix: one job per test binary it runs
+              f"asan_jobs={json.dumps(asan_jobs(planned_asan_run(doc['lanes'], unit_run)), separators=(',', ':'))}",
               f"htmlui_filter={doc['htmlui_filter']}", f"mcp_shards={json.dumps(doc['mcp']['shards'], separators=(',', ':'))}"]
     return "\n".join(lines) + "\n"
 
@@ -424,6 +443,7 @@ def main(argv: list[str]) -> int:
         doc = {"event": args.event, "full": args.event in ("full", "nightly"), "base": resolve(root, args.base) or args.base,
                "head": resolve(root, "HEAD") or args.head, "lanes": result["lanes"], "unit_filter": result["unit_filter"],
                "unit_run": result["unit_run"], "unit_jobs": unit_job_names(result["unit_run"]),
+               "asan_jobs": asan_job_names(planned_asan_run(result["lanes"], result["unit_run"])),
                "htmlui_filter": result["htmlui_filter"],
                "mcp": dict(result["mcp"], shards=shards), "fallbacks": result["fallbacks"], "notes": notes,
                "files": plan["files"] if plan else None,
