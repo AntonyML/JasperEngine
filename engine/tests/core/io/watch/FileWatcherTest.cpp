@@ -11,8 +11,13 @@
 #include "jobs/detail/TimedWait.h"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
+
+#if defined(JASPERENGINE_WATCH_FSEVENTS)
+#include <sys/qos.h>
+#endif
 
 using namespace jasperengine;
 using namespace jasperengine::test;
@@ -310,6 +315,48 @@ TEST(FileWatcherRules, BackendNames) {
     EXPECT_STREQ(watchBackendKindName(WatchBackendKind::Native), "native");
 }
 
+// The service stops a linked folder's backend on its dispatcher while a flush on another thread
+// may be using it (FileWatchServiceTests.SeesChangesThroughLinkedFolders): the stop waits for that
+// flush or ends it, and no sink call follows it
+TEST(FileWatcherBackends, StopEndsAFlushOnAnotherThread) {
+    struct CountingSink : watch::WatchSink {
+        std::atomic<bool> stopped{false};
+        std::atomic<int> afterStop{0};
+        void onRawEvents(std::vector<watch::RawEvent>&&) override {
+            if (stopped) afterStop++;
+        }
+        void onBackendFailed(const std::string&) override {}
+    };
+    WatchTempDir dir;
+    for (const bool native : {true, false}) {
+        if (native && !FileWatcher::hasNative()) continue;
+        for (int round = 0; round < 3; round++) {
+            std::unique_ptr<FileWatcher> watcher = native ? FileWatcher::createNative() : FileWatcher::createPolling(POLL_INTERVAL);
+            CountingSink sink;
+            std::string error;
+            ASSERT_TRUE(watcher->start(dir.path, sink, error)) << error;
+            std::atomic<bool> flushing{true};
+            std::atomic<int> flushes{0};
+            std::thread flusher([&]() {
+                for (int i = 0; flushing; i++) {
+                    writeText(dir.path / ("f" + std::to_string(i % 4) + ".txt"), std::to_string(i));
+                    watcher->flush(timeLimit(ms(500)));
+                    flushes++;
+                }
+            });
+            EXPECT_TRUE(waitFor([&]() { return flushes.load() >= 2; }, timeLimit(ms(3000)))) << watcher->name();
+            // into the next flush
+            std::this_thread::sleep_for(ms(1 + round));
+            watcher->stop();
+            sink.stopped = true;
+            flushing = false;
+            flusher.join();
+            EXPECT_FALSE(watcher->flush(ms(50))) << watcher->name() << ": a stopped backend has nothing to flush";
+            EXPECT_EQ(sink.afterStop.load(), 0) << watcher->name();
+        }
+    }
+}
+
 #if defined(JASPERENGINE_WATCH_FSEVENTS)
 // On macOS 26 some new streams are never served: start() replaces them (S05, macOS native run)
 namespace {
@@ -354,5 +401,29 @@ TEST(FsEventsStart, WithNoStreamServedTheServicePolls) {
     DeadStreams dead(3);
     ASSERT_TRUE(service.start(dir.path, WatchBackendKind::Native, POLL_INTERVAL));
     expectChangesReported(dir, service, FileWatchService::State::Degraded);
+}
+
+// A flush waits on a condition variable for the marker's callback, which lends that callback no
+// QoS: at fseventsd's own (utility) it waited behind busy threads and the flush missed its deadline
+TEST(FsEventsCallbacks, RunAtUserInitiatedQoS) {
+    struct QosSink : watch::WatchSink {
+        std::atomic<int> lowest{QOS_CLASS_USER_INTERACTIVE + 1};
+        void onRawEvents(std::vector<watch::RawEvent>&&) override {
+            const int qos = static_cast<int>(qos_class_self());
+            for (int seen = lowest; qos < seen && !lowest.compare_exchange_weak(seen, qos);) {
+            }
+        }
+        void onBackendFailed(const std::string&) override {}
+    };
+    WatchTempDir dir;
+    QosSink sink;
+    std::unique_ptr<FileWatcher> watcher = FileWatcher::createNative();
+    std::string error;
+    ASSERT_TRUE(watcher->start(dir.path, sink, error)) << error;
+    writeText(dir.path / "a.txt", "a");
+    ASSERT_TRUE(watcher->flush(timeLimit(ms(2000))));
+    watcher->stop();
+    ASSERT_LE(sink.lowest.load(), QOS_CLASS_USER_INTERACTIVE) << "no callback";
+    EXPECT_GE(sink.lowest.load(), static_cast<int>(QOS_CLASS_USER_INITIATED)) << "lowest callback QoS 0x" << std::hex << sink.lowest.load();
 }
 #endif
