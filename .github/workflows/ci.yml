@@ -1182,8 +1182,8 @@ jobs:
 
   # --------------------------------------------------------------- Report ---
   # The PR comment (same-repo PRs; a fork's token is read-only and .github/workflows/ci-report.yml posts
-  # it), the merge queue's "Removed from the merge queue:" comment, and main's ci-red issue. It needs
-  # Check, so it knows the verdict; Check does not need it.
+  # it), the merge queue's "Removed from the merge queue:" comment, main's ci-red issue and the advisory
+  # run's advisory-red issue. It needs Check, so it knows the verdict; Check does not need it.
   report:
     name: report
     needs: [changes, lint, linux, unit, asan, htmlui, mcp, smoke, web, android, windows, windows-compile, macos, ios, check]
@@ -1224,7 +1224,7 @@ jobs:
           started="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at || true)"
           python3 tools/ci/report.py render --reports reports --lanes plan/lanes.json --needs needs.json \
               --run-url "$RUN_URL" --sha "$SHA" --started-at "$started" --advisory "$ADVISORY_LANES" \
-              --prefix "$PREFIX" --out comment.md
+              --prefix "$PREFIX" --out comment.md --github-output "$GITHUB_OUTPUT"
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment on the PR
@@ -1242,6 +1242,19 @@ jobs:
       - name: Open or update the ci-red issue
         if: github.event_name == 'push' && needs.check.result != 'success'
         run: python3 tools/ci/report.py issue --label ci-red --title "main is red" --body comment.md --commit "$GITHUB_SHA"
+
+      # the advisory run of main (Check stays green on an advisory failure): one standing issue while any of
+      # its jobs fails, is cancelled or leaves no report, commented on by each run and closed by a green one
+      - name: Open, update or close the advisory-red issue
+        if: inputs.advisory && github.ref == 'refs/heads/main'
+        env:
+          GREEN: ${{ needs.check.result == 'success' && steps.render.outputs.failing == '0' }}
+        run: |
+          if [[ "$GREEN" == true ]]; then
+              python3 tools/ci/report.py issue --label advisory-red --close --body comment.md
+          else
+              python3 tools/ci/report.py issue --label advisory-red --title "Advisory tests fail on main" --body comment.md
+          fi
 
   # ---------------------------------------------------------------- Check ---
   # The one required status: every needed lane succeeded, or was skipped because changes said so, and no
