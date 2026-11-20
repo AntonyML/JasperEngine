@@ -230,9 +230,10 @@ jobs:
               python3 tools/ci/warning-summary.py build/test-results/linux-build.log >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # tar keeps the executable bits a zipped artifact loses
+      # tar keeps the executable bits a zipped artifact loses; the folders the install copies unchanged
+      # from the checkout stay out (half the bytes): mcp and smoke check out the same commit
       - name: Pack the editor install
-        run: tar -C build/linux --zstd -cf build/editor-install.tar.zst editor-install
+        run: tools/ci/editor_install.sh pack build/linux/editor-install build/editor-install.tar.zst
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: editor-install
@@ -626,7 +627,7 @@ jobs:
           name: plan
           path: build/ci-plan
       - name: Unpack the editor install
-        run: mkdir -p build/linux && tar -C build/linux --zstd -xf build/editor-install.tar.zst
+        run: tools/ci/editor_install.sh unpack build/editor-install.tar.zst build/linux
 
       - name: MCP shard ${{ matrix.shard }}
         # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
@@ -679,7 +680,7 @@ jobs:
           path: build
       - name: Unpack the editor install
         id: install
-        run: mkdir -p build/linux && tar -C build/linux --zstd -xf build/editor-install.tar.zst
+        run: tools/ci/editor_install.sh unpack build/editor-install.tar.zst build/linux
 
       - name: Player runtime (Linux, OpenGL, full, release)
         id: players

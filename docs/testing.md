@@ -1128,6 +1128,11 @@ PR or in the queue, about 100 in the nightly).
   does not have (a PR that changes `docker/`, until its merge runs `images.yml`) is built in the job
   from the registry's layer cache and logs `is not in the registry; building it`, then
   `image: built <ref> in <n> s`; a missing tag is asked for once, any other pull failure twice.
+- **Editor install** (artifact `editor-install`, from `linux` to `mcp` and `smoke`; the nightly's
+  `nightly-editor-install`): `tools/ci/editor_install.sh pack` leaves out the folders the install copies
+  unchanged from the checkout (the Title Art HDRIs, fonts and thumbnails, the sound library: half the
+  archive, already compressed), and `unpack` copies them back from the job's checkout of the same
+  commit: 199 MB to 100 MB. A folder the build changed travels in the archive.
 
 ### Measured lane times
 
