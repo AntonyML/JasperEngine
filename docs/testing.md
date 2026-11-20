@@ -781,6 +781,7 @@ the option errors.
 | `JASPERENGINE_UNITY_BUILD` | OFF | unity builds of our own targets, 16 sources per unit |
 | `JASPERENGINE_PCH` | ON (editor tree), OFF (`engine/`) | precompiled headers of our own targets, GCC and Clang (below) |
 | `JASPERENGINE_LINKER` | AUTO | lld for Debug and RelWithDebInfo builds that ship nothing; `DEFAULT`, `LLD`, `MOLD`, `GOLD` |
+| `JASPERENGINE_DEBUG_INFO` | `full` (a first configure: the environment's `JASPERENGINE_DEBUG_INFO`) | `lines`: line tables only wherever the tree has debug information (below) |
 | `JASPERENGINE_VENDORED_UNITY` | ON, OFF for a shipped game | Jolt unity-built |
 
 `engine/CMakeLists.txt` is also the top-level file of every exported game, so all of these default
@@ -908,6 +909,18 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   Android image ccache names the compiler by `--version`: the NDK is unpacked in each container, so
   its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
+- **Debug information** (`JASPERENGINE_DEBUG_INFO`, `engine/cmake/JasperDebugInfo.cmake`): `lines`
+  turns every `-g` a tree gets (Debug and RelWithDebInfo, a shipped game's split symbols) into GCC's
+  `-g1` or Clang's `-gline-tables-only` (Emscripten included); a Release tree without debug
+  information gets none, and MSVC keeps `/Z7` (it has no such level). Backtraces, crash reports and
+  sanitizer reports still name each frame's function, file and line (the logger's backtraces use the
+  dynamic symbols, `dladdr`); a debugger sees no types or local variables. CI builds every tree with
+  it (`JASPERENGINE_DEBUG_INFO=lines` in `ci.yml`; `tools/build.sh` passes `-DJASPERENGINE_DEBUG_INFO`
+  to each tree it configures, `full` when unset, and the variable into the image, where the games the
+  editor configures take it as their default; `tools/smoke-test.sh` passes it too), so the lanes'
+  ccache entries fit the budget ("CI"). Nothing else sets it: local builds, `build-release.yml`'s
+  editors and players, and the games users export keep full debug information. Set it to reproduce
+  a lane exactly.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
   the editor release and every shipped game keep the toolchain's linker.

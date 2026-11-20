@@ -43,6 +43,12 @@ env:
   # no precompiled headers (tools/build.sh, tools/ci/macos.sh): a GCC one is not the same bytes twice, so
   # a lost ccache entry of it misses every unit built on it; warm builds are faster without
   JASPERENGINE_PCH: "OFF"
+  # line tables only where a build has debug information (engine/cmake/JasperDebugInfo.cmake; tools/build.sh,
+  # tools/smoke-test.sh and CMake's own default pass it on): backtraces and sanitizer reports keep each
+  # frame's function and file:line, and the objects, so the ccache entries, are a fraction of the size
+  # (MSVC has no such level: Windows keeps /Z7). build-release.yml's editors and players, local builds and
+  # users' exported games keep full debug information
+  JASPERENGINE_DEBUG_INFO: lines
 
 defaults:
   run:
