@@ -169,12 +169,13 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # downloads go through tools/ci/retry.sh: a one-off network failure is not a red lane
       - name: Install actionlint
         run: |
           mkdir -p "$RUNNER_TEMP/actionlint"
-          cd "$RUNNER_TEMP/actionlint"
-          curl -fsSLo actionlint.tar.gz \
+          tools/ci/retry.sh curl -fsSLo "$RUNNER_TEMP/actionlint/actionlint.tar.gz" \
               "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP/actionlint"
           echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
           tar -xzf actionlint.tar.gz actionlint
 
@@ -846,8 +847,19 @@ jobs:
       - name: LF checkout
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # a second try when the first fails: on a cache miss the action downloads the installer, and its
+      # HEAD check of the URL has no retry of its own
       - uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        id: vulkan-sdk
         if: matrix.part == 'engine-vulkan'
+        continue-on-error: true
+        with:
+          vulkan_version: 1.3.296.0
+          install_runtime: false
+          cache: true
+          cache_save_if: ${{ github.event_name == 'push' }}
+      - uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        if: steps.vulkan-sdk.outcome == 'failure'
         with:
           vulkan_version: 1.3.296.0
           install_runtime: false
@@ -968,9 +980,9 @@ jobs:
       # the version control tests' svn and svnadmin (the Linux image has them)
       - name: Ninja, NASM and Subversion
         run: |
-          command -v ninja > /dev/null || brew install ninja
-          command -v nasm > /dev/null || brew install nasm
-          command -v svnadmin > /dev/null || brew install subversion
+          command -v ninja > /dev/null || tools/ci/retry.sh brew install ninja
+          command -v nasm > /dev/null || tools/ci/retry.sh brew install nasm
+          command -v svnadmin > /dev/null || tools/ci/retry.sh brew install subversion
       - uses: ./.github/actions/ccache-restore
         with:
           lane: macos
@@ -1014,7 +1026,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # dav1d's x86-64 asm: the simulator build has an x86_64 slice
       - name: NASM
-        run: command -v nasm > /dev/null || brew install nasm
+        run: command -v nasm > /dev/null || tools/ci/retry.sh brew install nasm
       - name: Xcode project (iOS)
         run: tools/ci/macos.sh xcode ios
       - name: Xcode project (macOS)
