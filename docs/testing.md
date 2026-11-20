@@ -1128,6 +1128,9 @@ PR or in the queue, about 100 in the nightly).
   does not have (a PR that changes `docker/`, until its merge runs `images.yml`) is built in the job
   from the registry's layer cache and logs `is not in the registry; building it`, then
   `image: built <ref> in <n> s`; a missing tag is asked for once, any other pull failure twice.
+  `images.yml` pushes zstd layers, which unpack about 4 times as fast as gzip (Docker 23 or later
+  pulls them; `JASPER_DOCKER_IMAGE=<ref>` needs one locally); tags pushed before that stay gzip until
+  the weekly rebuild.
 - **Editor install** (artifact `editor-install`, from `linux` to `mcp` and `smoke`; the nightly's
   `nightly-editor-install`): `tools/ci/editor_install.sh pack` leaves out the folders the install copies
   unchanged from the checkout (the Title Art HDRIs, fonts and thumbnails, the sound library: half the
