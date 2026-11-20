@@ -513,6 +513,33 @@ the file's other tests leave, nor do the others use theirs): their tests may be 
 each with its own worker process and editor (`run_tests.py --split-seconds N`). `test_html_ui_examples.py` (each example's golden) and the
 Khronos models of `test_materials_pbr.py` (`test_khronos_<Model>`) declare it.
 
+### Setup cost
+
+The runner prints `== setup` before its summary and writes `setup` into `--json`: each chunk's wall
+time and its tests' time, and each editor's `scratch` (its directory and project copy), `start` (to
+the tool list), `first_call` (the first tool call, which waits for the project to load), `close`, and
+`shared` for the file's editor (the others are started by its tests). Measured:
+
+- Merge-queue run 44745111854, the CI suite in 8 shards (438 chunks, 2,649 tests): 9.25 h of chunk
+  time, 9.03 h of it inside the tests; outside them a median 1.5 s a chunk (the worker's start, 0.5 s of
+  it importing the harness, and the file's editor close).
+- An editor, in the Linux image on llvmpipe at 2 to 4 CPUs: 0.4 s to start, 1.5 s of load in its first
+  call (the same for `create` and a `tools/fixtures` copy; 0.6 s of it the engine API the editor syncs
+  into `.jasperengine/engine-api`, 3,554 files), 0.4 to 0.7 s to close.
+- Fixture copies take milliseconds: of the CI files, 343 start on `create`, 21 on `pose-animation`, 15 on
+  `html-ui`, none on `build/fixture-unity`; the largest `tools/fixtures` project is `reflection-parity`
+  (14 MB, 2 files), the next 1.5 MB. A file's first test takes as long whatever its fixture (CI median:
+  `create` 6.0 s, `pose-animation` 4.5 s, `html-ui` 6.9 s).
+
+So the suite spends about 5% setting up, and each file keeps a worker process and an editor of its
+own: a reset between files in one editor (`create_project` with `unsaved: "discard"`) takes 1.6 s
+against 2.3 s for a new editor's start, load and close, about 1% of the suite, and would hand the
+editor's process state (settings, layout, Lua, tool groups, console) to the next file. A pre-synced
+engine API cannot help `create` (`--create` takes an empty directory only). A test that starts editors
+of its own pays about 3 s for each (171 such calls in 62 files). For shard planning: a chunk costs
+about 1.5 s outside its tests plus 2 to 3 s for its editor inside its first test, not the 20 s of
+`shard.py`'s `CHUNK_OVERHEAD`.
+
 ### Caches and CPU caps
 
 - **ccache** is shared by every worktree of a machine (`<main checkout>/build/.cache/ccache`), and
