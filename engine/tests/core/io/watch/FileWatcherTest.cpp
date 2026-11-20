@@ -340,18 +340,18 @@ TEST(FileWatcherBackends, StopEndsAFlushOnAnotherThread) {
             std::thread flusher([&]() {
                 for (int i = 0; flushing; i++) {
                     writeText(dir.path / ("f" + std::to_string(i % 4) + ".txt"), std::to_string(i));
-                    watcher->flush(timeLimit(ms(500)));
+                    watcher->flush(timeLimit(fileWatcherMs(500)));
                     flushes++;
                 }
             });
-            EXPECT_TRUE(waitFor([&]() { return flushes.load() >= 2; }, timeLimit(ms(3000)))) << watcher->name();
+            EXPECT_TRUE(waitFor([&]() { return flushes.load() >= 2; }, timeLimit(fileWatcherMs(3000)))) << watcher->name();
             // into the next flush
-            std::this_thread::sleep_for(ms(1 + round));
+            std::this_thread::sleep_for(fileWatcherMs(1 + round));
             watcher->stop();
             sink.stopped = true;
             flushing = false;
             flusher.join();
-            EXPECT_FALSE(watcher->flush(ms(50))) << watcher->name() << ": a stopped backend has nothing to flush";
+            EXPECT_FALSE(watcher->flush(fileWatcherMs(50))) << watcher->name() << ": a stopped backend has nothing to flush";
             EXPECT_EQ(sink.afterStop.load(), 0) << watcher->name();
         }
     }
@@ -421,7 +421,7 @@ TEST(FsEventsCallbacks, RunAtUserInitiatedQoS) {
     std::string error;
     ASSERT_TRUE(watcher->start(dir.path, sink, error)) << error;
     writeText(dir.path / "a.txt", "a");
-    ASSERT_TRUE(watcher->flush(timeLimit(ms(2000))));
+    ASSERT_TRUE(watcher->flush(timeLimit(fileWatcherMs(2000))));
     watcher->stop();
     ASSERT_LE(sink.lowest.load(), QOS_CLASS_USER_INTERACTIVE) << "no callback";
     EXPECT_GE(sink.lowest.load(), static_cast<int>(QOS_CLASS_USER_INITIATED)) << "lowest callback QoS 0x" << std::hex << sink.lowest.load();
