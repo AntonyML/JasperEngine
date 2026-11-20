@@ -591,6 +591,8 @@ class Runs(unittest.TestCase):
         self.assertTrue(all(doc["lanes"][n]["run"] for n in ("linux", "unit", "asan", "htmlui", "mcp", "smoke", "windows")), out)
         self.assertEqual(doc["mcp"]["mode"], "ci")
         self.assertTrue(any("no earlier advisory run" in f for f in doc["fallbacks"]), doc["fallbacks"])
+        # (no base: --base is a placeholder, and the report must not say "the changes since" it)
+        self.assertIsNone(doc["base"])
 
     def test_unusable_arguments_exit_2(self):
         with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):

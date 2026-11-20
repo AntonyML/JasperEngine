@@ -583,7 +583,9 @@ def main(argv: list[str]) -> int:
                 # (a shard with no plan file: tools/ci/mcp_shard.sh fails it, and says why: no silent green)
                 shards = ["1"]
                 result["fallbacks"].append(f"the MCP shards could not be planned ({why}): the mcp lane fails")
-        doc = {"event": args.event, "full": args.event in ("full", "nightly"), "base": resolve(root, base) or base,
+        # (an advisory run with no earlier one has no base: --base is a placeholder there)
+        doc = {"event": args.event, "full": args.event in ("full", "nightly"),
+               "base": None if args.event == "advisory" and not found else resolve(root, base) or base,
                "head": resolve(root, "HEAD") or args.head, "lanes": result["lanes"], "unit_filter": result["unit_filter"],
                "unit_run": result["unit_run"], "unit_jobs": unit_job_names(result["unit_run"]),
                "asan_jobs": asan_job_names(planned_asan_run(result["lanes"], result["unit_run"])),
