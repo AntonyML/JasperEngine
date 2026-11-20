@@ -414,7 +414,8 @@ continue to fail on any native crash.
   (`tools/check-physics-off.sh all-off`): the editor's engine has every module, so only this shows a
   source that got a header through a module's code, which breaks Compile builds and the smaller players.
 - **CI owns the full suite** (below, "CI"): a PR runs the lanes its diff needs, the merge queue
-  every build and unit test plus the planned MCP files, the nightly the whole MCP CI suite;
+  every lane that can block the merge (the advisory test lanes run on the push to `main`), the
+  nightly the whole MCP CI suite;
   `gh workflow run ci.yml --ref <branch> -f full=true` runs everything on a branch. check-changed is
   a selection and says so in every summary. The MCP files outside the CI suite (`MCP_SUITE=all`)
   run only where someone runs them.
@@ -965,7 +966,8 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 `Check` treats a skipped lane as passed only when `changes` said the lane was not needed. A test lane
 that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) or an
 ASan job (`asan-core`, `asan-editor`) without a report or that ran no test, or a merge-queue or full
-run that skipped a lane turns it red.
+run that skipped a lane turns it red. The one skip the queue may make is of an advisory lane or test
+run that `changes` planned off for being advisory (`lanes.json` `advisory_off`).
 
 **The editor parts.** The editor tests' build is most of their lane (runs 43737549764 and 43773511699:
 the build 110 and 137 min, the 5,268 tests 7 min). Each part (`tools/ci/plan_lanes.py` `UNIT_PARTS`)
@@ -986,7 +988,11 @@ on every change a game's build reads.
 until `main` is green through CI, and `windows-editor-tests` (the Windows editor job's test run,
 reported apart from the job, until the suite passes on Windows): `Check` ignores their failures, and
 the report shows them first, marked advisory. Lint and the platform builds always block, the
-Windows jobs' builds and the core tests' run included.
+Windows jobs' builds and the core tests' run included. Since an advisory lane cannot block a merge,
+the merge queue does not run it (`tools/ci/plan_lanes.py --advisory "$ADVISORY_LANES"`): of `unit`
+(every job of it), `asan`, `htmlui`, `mcp`, `smoke` and `windows-editor-tests` (the editor leg still
+builds), the ones the list names; taking a lane off the list puts it back in the queue with no other
+edit. Lint and the platform lanes run in the queue whatever the list says.
 
 ### What each event runs
 
@@ -995,10 +1001,11 @@ Windows jobs' builds and the core tests' run included.
 | `changes`, `Check` | yes | yes | yes | yes |
 | `lint` | unless every path is one nothing reads | same | no | yes |
 | platform builds | when anything that builds changed | yes | yes, to warm the caches | yes |
-| `unit`, `htmlui` | the suites the plan selects | all, unfiltered | build only (the caches, the deps dumps) | all |
-| `asan` | the unit lane's suites | all, unfiltered | no (it keeps no cache entry) | all |
-| `mcp` | the planned CI-suite files | the planned files, over the group's diff against `main` | no | the whole CI suite |
-| `smoke` | when a game-building path changed | yes | no | yes |
+| `unit`, `htmlui` | the suites the plan selects | all, unfiltered; not while advisory | build only (the caches, the deps dumps) | all |
+| `asan` | the unit lane's suites | all, unfiltered; not while advisory | no (it keeps no cache entry) | all |
+| `mcp` | the planned CI-suite files | the planned files, over the group's diff against `main`; not while advisory | no | the whole CI suite |
+| `smoke` | when a game-building path changed | yes; not while advisory | no | yes |
+| `windows-editor-tests` | with the Windows editor leg | the same; not while advisory | no | yes |
 
 - **Nothing reads it**: a change only under `docs/specs/`, `docs/superpowers/`, `docs/engine-gaps/`,
   `docs/openengine-analysis/`, `docs/test-cleanup/`, `.claude/`, a root `*-LEDGER.md` or `README.md`

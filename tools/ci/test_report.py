@@ -658,6 +658,32 @@ class WindowsLegsTest(unittest.TestCase):
         body = self.render(reports, lanes_json())
         self.assertIn("No report from: windows (editor-tests)", body)
 
+    def test_the_queue_leaves_the_advisory_lanes_out(self):
+        # tools/ci/plan_lanes.py plans them off (advisory_off) and the editor leg's test run too (build_only):
+        # the comment and the "Removed from the merge queue" report expect nothing of them
+        why = "the merge queue: advisory (ADVISORY_LANES), so it cannot block the merge; it runs on the push to main"
+        lanes = lanes_json(**{n: (False, why) for n in ("unit", "asan", "htmlui", "mcp", "smoke")})
+        lanes.update(event="merge_group", advisory_off=["unit", "asan", "htmlui", "mcp", "smoke", "windows-editor-tests"],
+                     build_only=["windows-editor-tests"])
+        lanes["mcp"] = {"mode": "none", "files": [], "not_in_ci": [], "shards": []}
+        names = ["changes", "lint", "linux", "web", "android", "macos", "ios"] + [f"windows-{p}" for p in report.WINDOWS_PARTS]
+        reports = [lane_report(n) for n in names]
+        advisory = ["unit", "asan", "htmlui", "mcp", "smoke", "windows-editor-tests"]
+        body = self.render(reports, lanes, advisory=advisory)
+        self.assertIn(f"CI passed on `3f2c1ab`: {len(names)} jobs", body.splitlines()[1])
+        self.assertNotIn("No report from", body)
+        self.assertNotIn("editor-tests", body)
+        self.assertIn("- unit: skipped (the merge queue: advisory \\(ADVISORY\\_LANES\\)", body)
+        # a blocking failure removes the PR, with the advisory lanes still expected of nobody
+        for old in self.reports.glob("*.json"):
+            old.unlink()
+        failed = lane_report("linux", "failure", failures=[failure("editor/App.cpp:3: error: x", "build")])
+        body = self.render([r for r in reports if r["lane"] != "linux"] + [failed], lanes, advisory=advisory,
+                           prefix="Removed from the merge queue:")
+        self.assertIn(f"Removed from the merge queue: ❌ CI failed on `3f2c1ab` — 1 of {len(names)} jobs", body.splitlines()[1])
+        self.assertNotIn("No report from", body)
+        self.assertIn("unit (skipped: the merge queue", body)
+
     def test_a_skipped_windows_lane_has_no_legs(self):
         names = ["changes", "lint", "linux", "unit", "asan", "htmlui", "smoke", "web", "android", "macos", "ios", "mcp-1", "mcp-2"]
         reports = [lane_report(n, ran=5 if n in ("unit", "asan", "htmlui", "mcp-1", "mcp-2") else 0) for n in names]
@@ -717,6 +743,11 @@ class UnitJobsTest(unittest.TestCase):
         # a plan from before the editor's parts: a job per planned binary
         self.assertEqual(self.lanes(unit_run={"core": True, "editor": True})["unit_jobs"], ["core", "editor"])
         self.assertEqual(self.lanes()["unit_jobs"], [])
+
+    def test_load_lanes_reads_what_the_queue_left_out(self):
+        lanes = self.lanes(advisory_off=["unit", "windows-editor-tests", "../x", 3], build_only=["windows-editor-tests"])
+        self.assertEqual((lanes["advisory_off"], lanes["build_only"]), (["unit", "windows-editor-tests"], ["windows-editor-tests"]))
+        self.assertEqual((self.lanes()["advisory_off"], self.lanes()["build_only"]), ([], []))
 
     def test_load_lanes_reads_the_asan_jobs(self):
         self.assertEqual(self.lanes(asan_jobs=["core", "editor"])["asan_jobs"], ["core", "editor"])

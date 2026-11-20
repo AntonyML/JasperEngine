@@ -4,11 +4,13 @@ name: CI
 # (tools/ci/plan_lanes.py over tools/check-changed); each lane runs one repository script, the same command
 # a developer runs (its JASPER_CI_REPRO); `report` writes the PR comment; `Check` is the one required status.
 #
-# - pull_request: the planned lanes. merge_group: every lane, unit and HTML UI unfiltered, MCP planned over
-#   the group's diff. push to main: the build lanes only, to save the caches and plan inputs PRs restore.
+# - pull_request: the planned lanes. merge_group: every lane but the ADVISORY_LANES ones, which cannot block
+#   the merge, unit and HTML UI unfiltered, MCP planned over the group's diff. push to main: the build lanes
+#   only, to save the caches and plan inputs PRs restore.
 #   workflow_dispatch with full: everything, the whole MCP CI suite included, on any branch.
 # - The test lanes in ADVISORY_LANES report but do not fail Check until main is green through CI (D2, §14.1
-#   phase 7). Lint and every platform build lane block.
+#   phase 7); the merge queue does not run them (tools/ci/plan_lanes.py --advisory). Lint and every platform
+#   build lane block.
 # - Caches (§10.2): PRs and the queue restore; push to main saves, and the caches job keeps one entry each.
 on:
   pull_request:
@@ -80,6 +82,7 @@ jobs:
       unit_filter_editor: ${{ steps.plan.outputs.unit_filter_editor }}
       htmlui_filter: ${{ steps.plan.outputs.htmlui_filter }}
       mcp_shards: ${{ steps.plan.outputs.mcp_shards }}
+      build_only: ${{ steps.plan.outputs.build_only }}
     steps:
       - name: Start
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -133,7 +136,8 @@ jobs:
                   [[ "$FULL" == true ]] && event=full
                   base="$(git merge-base origin/main HEAD)" head="$GITHUB_SHA" ;;
           esac
-          args=(--event "$event" --base "$base" --head "$head" --out-dir build/ci-plan --github-output "$GITHUB_OUTPUT")
+          args=(--event "$event" --base "$base" --head "$head" --out-dir build/ci-plan --github-output "$GITHUB_OUTPUT"
+                --advisory "$ADVISORY_LANES")
           [[ -d build/ci-inputs/deps ]] && args+=(--deps-from build/ci-inputs/deps)
           [[ -f build/coverage/coverage-map.json ]] && args+=(--coverage-map build/coverage/coverage-map.json)
           [[ -f build/ci-inputs/mcp-test-seconds.json ]] && args+=(--test-seconds build/ci-inputs/mcp-test-seconds.json)
@@ -906,10 +910,13 @@ jobs:
         if: matrix.part == 'editor'
         run: tools/ci/windows.sh editor
       # reported apart (windows-editor-tests, in ADVISORY_LANES while the suite settles on Windows): the
-      # leg's build gates, its test run is listed; a hang costs TEST_TIMEOUT, not the leg
+      # leg's build gates, its test run is listed; a hang costs TEST_TIMEOUT, not the leg. Not in the
+      # merge queue while advisory (build_only)
       - name: Editor unit tests (CPU suites)
         id: editor-tests
-        if: matrix.part == 'editor' && github.event_name != 'push'
+        if: >-
+          matrix.part == 'editor' && github.event_name != 'push'
+          && !contains(fromJSON(needs.changes.outputs.build_only), 'windows-editor-tests')
         continue-on-error: true
         timeout-minutes: 75
         env:

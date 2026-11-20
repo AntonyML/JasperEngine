@@ -9,9 +9,10 @@ skipped while lanes.json says that lane did not need to run. It fails when:
   - a job failed or was cancelled (a cancelled run is red);
   - a job was skipped that lanes.json planned, or that lanes.json does not know, or lanes.json is
     missing or unreadable (nothing then proves a skip was meant);
-  - a full run (workflow_dispatch full=true) skipped any lane, or a merge-queue run skipped one
-    other than mcp (whose planned selection may be empty) while anything ran (a group only paths
-    nothing reads touch runs nothing, D3);
+  - a full run (workflow_dispatch full=true) skipped any lane or test run, or a merge-queue run
+    skipped one other than mcp (whose planned selection may be empty) while anything ran (a group
+    only paths nothing reads touch runs nothing, D3), unless the lane or test run is --advisory and
+    lanes.json lists it under advisory_off (planned off for that: tools/ci/plan_lanes.py);
   - a test lane (TEST_LANES) succeeded with zero tests in its report, or with no report; each MCP
     shard of lanes.json counts on its own (report mcp-<shard>), as does each unit job (unit-<job>:
     core, editor-1, editor-2) and each asan job (asan-<job>: core, editor).
@@ -59,6 +60,10 @@ def gate(needs_path: Path, lanes_path: Path | None, reports_dir: Path | None, ad
         notes.append("no usable lanes.json: a skipped job cannot be shown to be meant")
     event = "full" if plan["full"] else plan["event"]
     ran_any = any(lane["run"] for name, lane in plan["lanes"].items() if name != "changes")
+
+    def advisory_off(name: str) -> bool:
+        """The merge queue left it to the push to main for being advisory, and Check holds it advisory."""
+        return name in advisory_set and name in plan["advisory_off"]
 
     def row(job: str, result: str, verdict: str, fails: bool, is_advisory: bool = False) -> None:
         rows.append((job, result, verdict))
@@ -110,7 +115,7 @@ def gate(needs_path: Path, lanes_path: Path | None, reports_dir: Path | None, ad
                 row(job, result, "FAIL: skipped, but the plan needed it", True)
             elif event == "full":
                 row(job, result, "FAIL: a full run skips no lane", True)
-            elif event == "merge_group" and job != "mcp" and ran_any:
+            elif event == "merge_group" and job != "mcp" and ran_any and not advisory_off(job):
                 row(job, result, "FAIL: the merge queue skips no lane", True)
             else:
                 row(job, result, f"ok (not planned: {lane['why'] or 'no reason given'})", False)
@@ -135,7 +140,15 @@ def gate(needs_path: Path, lanes_path: Path | None, reports_dir: Path | None, ad
     # so the report itself must show the tests ran and passed
     for test_report, job in report.TEST_REPORTS.items():
         lane = plan["lanes"].get(job)
-        if not lane or not lane["run"] or event == "push" or job not in needs:
+        if not lane or not lane["run"] or job not in needs:
+            continue
+        if event == "push" or test_report in plan["build_only"]:
+            if event == "full":
+                row(test_report, "skipped", "FAIL: a full run skips no test run", True)
+            elif event == "merge_group" and not advisory_off(test_report):
+                row(test_report, "skipped", "FAIL: the merge queue skips no test run", True)
+            elif event == "merge_group":
+                row(test_report, "skipped", "ok (advisory: not run in the merge queue)", False)
             continue
         is_advisory = test_report in advisory_set
         r = reports.get(test_report)
