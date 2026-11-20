@@ -6,7 +6,9 @@ name: CI
 #
 # - pull_request: the planned lanes. merge_group: every lane but the ADVISORY_LANES ones, which cannot block
 #   the merge, unit and HTML UI unfiltered, MCP planned over the group's diff. push to main: the build lanes,
-#   to save the caches and plan inputs PRs restore, and the tests of the advisory lanes the queue left out.
+#   to save the caches and plan inputs PRs restore, and the tests of the advisory lanes the queue left out;
+#   one push run at a time, the newest push waiting (GitHub drops an older waiting one), and a push run
+#   steps aside when a newer push that builds lands within ADMISSION_SECONDS.
 #   workflow_dispatch with full: everything, the whole MCP CI suite included, on any branch.
 # - The test lanes in ADVISORY_LANES report but do not fail Check until main is green through CI (D2, §14.1
 #   phase 7); the merge queue does not run them (tools/ci/plan_lanes.py --advisory). Lint and every platform
@@ -33,13 +35,16 @@ concurrency:
   group: >-
     ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number)
     || github.event_name == 'merge_group' && format('ci-mq-{0}', github.ref)
-    || github.event_name == 'push' && format('ci-main-{0}', github.sha)
+    || github.event_name == 'push' && 'ci-main-push'
     || format('ci-dispatch-{0}', github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # the test lanes whose failures Check lists but does not fail on (D2); emptied in phase 7
   ADVISORY_LANES: "unit asan htmlui mcp smoke windows-editor-tests"
+  # a push to main waits this long before it takes the build runners, so a newer push (merge-queue groups
+  # land 1-4 min apart: 3 of 20 gaps, 2026-11-15..20) supersedes it first (tools/ci/plan_lanes.py --newest)
+  ADMISSION_SECONDS: 300
   # every compile error of a run, not the first one (tools/build.sh and tools/ci/platform-common.sh)
   KEEP_GOING: 1
   # no precompiled headers (tools/build.sh, tools/ci/macos.sh): a GCC one is not the same bytes twice, so
@@ -58,6 +63,9 @@ jobs:
     name: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read  # push: the earlier push runs (gh run list)
     env:
       JASPER_CI_REPRO: python3 tools/ci/plan_lanes.py
     outputs:
@@ -125,6 +133,7 @@ jobs:
           MQ_BASE: ${{ github.event.merge_group.base_sha }}
           MQ_HEAD: ${{ github.event.merge_group.head_sha }}
           PUSH_BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           case "$EVENT" in
               # the checked-out merge commit: base..HEAD is exactly the PR, and no scratch checkout is needed
@@ -141,6 +150,15 @@ jobs:
           [[ -d build/ci-inputs/deps ]] && args+=(--deps-from build/ci-inputs/deps)
           [[ -f build/coverage/coverage-map.json ]] && args+=(--coverage-map build/coverage/coverage-map.json)
           [[ -f build/ci-inputs/mcp-test-seconds.json ]] && args+=(--test-seconds build/ci-inputs/mcp-test-seconds.json)
+          if [[ "$event" == push ]]; then
+              # the admission delay: a newer push that builds supersedes this one before it takes a runner
+              sleep "$ADMISSION_SECONDS"
+              git fetch -q origin "$GITHUB_REF" && args+=(--newest "$(git rev-parse FETCH_HEAD)")
+              # planned against the last push run that finished (a waiting one a newer push replaced never ran)
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$GITHUB_REF_NAME" --event push --limit 50 \
+                  --json databaseId,headSha,status,conclusion,createdAt > "$RUNNER_TEMP/runs.json" \
+                  && args+=(--previous-runs "$RUNNER_TEMP/runs.json" --run-id "$GITHUB_RUN_ID")
+          fi
           tools/ci/logged.sh plan "python3 tools/ci/plan_lanes.py $(printf '%q ' "${args[@]}")"
 
       # lanes.json at the artifact's root

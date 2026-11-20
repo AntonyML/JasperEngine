@@ -39,8 +39,8 @@ def plan(files, builds=("linux",), unit=None, mcp=(), fallbacks=(), selected=Non
 ADVISORY = ("unit", "asan", "htmlui", "mcp", "smoke", "windows-editor-tests")
 
 
-def decide(event, p, error="", advisory=()):
-    return pl.decide(event, p, error, CI, LEFT_OUT, NIGHTLY_OUT, **({"advisory": advisory} if advisory else {}))
+def decide(event, p, error="", advisory=(), **extra):
+    return pl.decide(event, p, error, CI, LEFT_OUT, NIGHTLY_OUT, **({"advisory": advisory} if advisory else {}), **extra)
 
 
 def runs(result):
@@ -207,6 +207,20 @@ class Rules(unittest.TestCase):
         r = decide("push", plan(["README.md"], builds=()), advisory=ADVISORY)
         self.assertEqual((runs(r), r["build_only"]), ({"changes"}, []))
 
+    def test_a_newer_push_that_builds_supersedes_this_one(self):
+        # pushes to main come one per merge-queue group, some minutes apart (2026-11-15..20: 62 s, 3 and
+        # 4 min of 20 gaps): the newest push's run builds and saves the caches, an older one steps aside
+        p = plan(["engine/core/Foo.cpp"], mcp=["test_a.py"])
+        r = decide("push", p, advisory=ADVISORY, superseded_by=("c" * 40, "editor/App.cpp"))
+        self.assertEqual(runs(r), {"changes"})
+        self.assertEqual(r["build_only"], [])
+        for name in pl.LANES[1:]:
+            self.assertIn("superseded by ccccccc", r["lanes"][name]["why"], name)
+            self.assertIn("editor/App.cpp", r["lanes"][name]["why"], name)
+        # only a push steps aside
+        for event in ("pull_request", "merge_group", "workflow_dispatch", "full"):
+            self.assertEqual(decide(event, p, superseded_by=("c" * 40, "a")), decide(event, p), event)
+
     def test_push_warms_the_smoke_cache_when_an_export_reads_the_change(self):
         # only main saves caches, so a smoke lane that never runs on push never warms its ccache
         r = decide("push", plan(["engine/core/Foo.cpp"], mcp=["test_a.py"]))
@@ -349,7 +363,7 @@ class Runs(unittest.TestCase):
         (root / "engine/core/Foo.cpp").write_text("int foo;\n")
         (root / "docs/specs").mkdir(parents=True)
         (root / "docs/specs/S1.md").write_text("a\n")
-        (root / ".gitignore").write_text("build/\n")
+        (root / ".gitignore").write_text("build/\n__pycache__/\n")
         sh(root, "git", "init", "-q", "-b", "main")
         sh(root, "git", "config", "user.email", "t@example.com")
         sh(root, "git", "config", "user.name", "t")
@@ -450,6 +464,56 @@ class Runs(unittest.TestCase):
         for line in ("run_unit=false", "run_asan=false", "run_mcp=false", "run_linux=true", "asan_jobs=[]", "mcp_shards=[]",
                      'build_only=["windows-editor-tests"]'):
             self.assertIn(line, lines)
+
+    def test_a_push_steps_aside_for_a_newer_push_that_builds(self):
+        head = self.commit("engine/core/Foo.cpp", "int foo = 3;\n")
+        docs = self.commit("docs/specs/S1.md", "newer\n")
+        out_dir = str(self.tmp / "out")
+        # the newer push changed only what nothing reads: its run plans nothing, so this one builds
+        code, doc, out = self.run_main("--event", "push", "--base", self.base, "--head", head, "--newest", docs,
+                                       "--out-dir", out_dir)
+        self.assertEqual((code, doc["superseded_by"]), (0, None), out)
+        self.assertTrue(doc["lanes"]["linux"]["run"], out)
+        # main is still at head, or the newer commit is unknown here: it builds
+        for newest in (head, "f" * 40):
+            code, doc, out = self.run_main("--event", "push", "--base", self.base, "--head", head, "--newest", newest,
+                                           "--out-dir", out_dir)
+            self.assertTrue(doc["lanes"]["linux"]["run"], (newest, out))
+        newer = self.commit("engine/core/Bar.cpp", "int bar;\n")
+        gh = self.tmp / "gh.txt"
+        code, doc, out = self.run_main("--event", "push", "--base", self.base, "--head", head, "--newest", newer,
+                                       "--out-dir", out_dir, "--github-output", str(gh))
+        self.assertEqual((code, doc["superseded_by"]), (0, newer), out)
+        self.assertEqual([n for n, e in doc["lanes"].items() if e["run"]], ["changes"])
+        self.assertIn("engine/core/Bar.cpp", doc["lanes"]["linux"]["why"])
+        self.assertIn("run_linux=false", gh.read_text().splitlines())
+
+    def test_a_push_is_planned_against_the_last_push_run_that_finished(self):
+        # a push run waiting for the one before it is replaced by a newer push's and never runs: the newer
+        # one's diff (from github.event.before) would leave its change unbuilt
+        built = self.commit("engine/core/Foo.cpp", "int foo = 4;\n")
+        skipped = self.commit("engine/core/Bar.cpp", "int bar;\n")
+        head = self.commit("docs/specs/S1.md", "head\n")
+        runs_json = self.tmp / "runs.json"
+        runs_json.write_text(json.dumps([
+            {"databaseId": 30, "headSha": head, "status": "in_progress", "conclusion": "", "displayTitle": "docs",
+             "createdAt": "2026-11-20T18:00:00Z"},
+            {"databaseId": 29, "headSha": skipped, "status": "completed", "conclusion": "cancelled", "displayTitle": "bar",
+             "createdAt": "2026-11-20T17:00:00Z"},
+            {"databaseId": 28, "headSha": built, "status": "completed", "conclusion": "failure", "displayTitle": "foo",
+             "createdAt": "2026-11-20T16:00:00Z"}]))
+        code, doc, out = self.run_main("--event", "push", "--base", skipped, "--head", head, "--out-dir", str(self.tmp / "out"),
+                                       "--previous-runs", str(runs_json), "--run-id", "30")
+        self.assertEqual((code, doc["base"]), (0, built), out)
+        self.assertEqual(doc["files"], ["docs/specs/S1.md", "engine/core/Bar.cpp"])
+        self.assertTrue(doc["lanes"]["linux"]["run"], out)
+        self.assertTrue(any("run 28" in n for n in doc["notes"]), doc["notes"])
+        # no earlier run finished, or the list is unreadable: the push's own diff
+        for text in ("[]", "not json"):
+            runs_json.write_text(text)
+            code, doc, out = self.run_main("--event", "push", "--base", skipped, "--head", head,
+                                           "--out-dir", str(self.tmp / "out"), "--previous-runs", str(runs_json), "--run-id", "30")
+            self.assertEqual((code, doc["base"], doc["files"]), (0, skipped, ["docs/specs/S1.md"]), (text, out))
 
     def test_unusable_arguments_exit_2(self):
         with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):

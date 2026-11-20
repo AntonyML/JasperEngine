@@ -3,7 +3,8 @@ unit test filters and which MCP shards (CI design §8.2; contract C1).
 
     python3 tools/ci/plan_lanes.py --event pull_request --base <sha> --head <sha> --out-dir build/ci-plan \\
         [--deps-from DIR] [--coverage-map FILE] [--test-seconds FILE] [--github-output FILE] \\
-        [--advisory "unit asan htmlui mcp smoke windows-editor-tests"]
+        [--advisory "unit asan htmlui mcp smoke windows-editor-tests"] \\
+        [--newest <sha>] [--previous-runs FILE --run-id N]
 
 It plans through `tools/check_changed.py --plan-json` (the per-commit gate's own selection), then
 applies CI's stricter rules:
@@ -20,7 +21,12 @@ applies CI's stricter rules:
 - push: the build lanes (caches and plan inputs), not ASan, which keeps no cache entry, and smoke when a
   game's export reads the change, so its Compile builds' ccache stays warm; the test lanes build only
   (build_only: their tests ran in the merge queue), but for the advisory ones the queue left out, which
-  run as the queue would have run them;
+  run as the queue would have run them. A push run waits ci.yml's admission delay first, and steps aside
+  (no lane) when main moved on by then with a path that builds (--newest: main's head after the delay;
+  the newer push's run builds and saves the caches). It plans against the head of the last push run that
+  finished (--previous-runs, `gh run list` JSON, without --run-id's own), not github.event.before: a
+  push run waiting for the one before it is dropped when a newer one comes, and its change would go
+  unbuilt;
 - full (workflow_dispatch with full: true): every lane, the whole MCP CI suite;
 - nightly: as full, and MCP also runs the CI_EXCLUDED files CI can run (NIGHTLY_LEFT_OUT says which
   it cannot);
@@ -215,14 +221,21 @@ def suite_choice(value) -> tuple[bool, str]:
 
 
 def decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_out: dict[str, str],
-           nightly_out: dict[str, str], advisory=()) -> dict:
+           nightly_out: dict[str, str], advisory=(), superseded_by: tuple[str, str] | None = None) -> dict:
     """The lanes of an event, from check-changed's plan (None: there is none, plan_error says why),
-    in LANES order; advisory: ADVISORY_LANES."""
+    in LANES order; advisory: ADVISORY_LANES; superseded_by: a newer push to main, and a path it
+    changed that builds (newer_push)."""
     result = _decide(event, plan, plan_error, ci, left_out, nightly_out)
     result["advisory_off"] = []
     result["build_only"] = []
     if event == "merge_group":
         leave_advisory_out(result, set(advisory))
+    elif event == "push" and superseded_by:
+        sha, path = superseded_by
+        for name in LANES[1:]:
+            result["lanes"][name] = {"run": False, "why": f"push to main: superseded by {sha[:7]} ({path} changed), "
+                                                          "pushed within the admission delay: its run builds and saves the caches"}
+        result["mcp"] = {"mode": "none", "files": [], "not_in_ci": []}
     elif event == "push":
         run_advisory_on_push(result, set(advisory), _decide("merge_group", plan, plan_error, ci, left_out, nightly_out))
     result["lanes"] = {name: result["lanes"][name] for name in LANES}
@@ -395,6 +408,41 @@ def _decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_
     return result
 
 
+def newer_push(root: Path, head: str, newest: str | None) -> tuple[str, str] | None:
+    """main's newer head and the first path after head that builds, when there is one: that push's run
+    then builds and saves the caches. None while main is at head, when the newer commits touch only
+    paths nothing reads (that run plans nothing, so head's must build), or newest is unknown here."""
+    newest_sha = resolve(root, newest) if newest else None
+    head_sha = resolve(root, head)
+    if not newest_sha or not head_sha or newest_sha == head_sha:
+        return None
+    r = git(root, "diff", "--name-only", head_sha, newest_sha)
+    if r.returncode != 0:
+        return None
+    building = [f for f in r.stdout.splitlines() if f and not cc.ci_reads_nothing(f)]
+    return (newest_sha, building[0]) if building else None
+
+
+def previous_run(runs, run_id: int | None) -> tuple[str, int] | None:
+    """The head and id of the newest run in runs (`gh run list --json databaseId,headSha,status,
+    conclusion,createdAt`) other than run_id that ran to its end: a cancelled one was dropped while it
+    waited (or stopped), so it planned nothing."""
+    if not isinstance(runs, list):
+        return None
+    done = [r for r in runs if isinstance(r, dict) and r.get("databaseId") != run_id and r.get("status") == "completed"
+            and r.get("conclusion") != "cancelled" and isinstance(r.get("headSha"), str)
+            and re.fullmatch(r"[0-9a-f]{40}", r["headSha"]) and isinstance(r.get("databaseId"), int)]
+    done.sort(key=lambda r: str(r.get("createdAt", "")), reverse=True)
+    return (done[0]["headSha"], done[0]["databaseId"]) if done else None
+
+
+def load_runs(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------------------- output
 
 def unit_jobs(unit_run: dict) -> list[dict]:
@@ -474,21 +522,30 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--test-seconds", type=Path, help="per-test seconds of earlier runs (mcp-test-seconds.json)")
     ap.add_argument("--github-output", type=Path, help="append the job outputs here ($GITHUB_OUTPUT)")
     ap.add_argument("--advisory", default="", help="ci.yml's ADVISORY_LANES: the test lanes that cannot fail Check")
+    ap.add_argument("--newest", help="push: main's head after the admission delay (a newer push supersedes this one)")
+    ap.add_argument("--previous-runs", type=Path, help="push: `gh run list` JSON of the event's earlier runs on the branch")
+    ap.add_argument("--run-id", type=int, help="this run's id, left out of --previous-runs")
     args = ap.parse_args(argv)
 
     out = args.out_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     root, scratch, head_error = head_checkout(args.head)
     try:
+        base = args.base
+        notes: list[str] = []
+        previous = previous_run(load_runs(args.previous_runs), args.run_id) if args.previous_runs else None
+        if args.event == "push" and previous and resolve(root, previous[0]):
+            base = previous[0]
+            notes.append(f"planned against {base[:7]}, the head of run {previous[1]}, the last push run that finished")
         plan, error = None, head_error
         if args.event not in ("full", "nightly") and not head_error:
-            plan, error = run_check_changed(root, args.base, out / "check-changed.json",
+            plan, error = run_check_changed(root, base, out / "check-changed.json",
                                             args.deps_from.resolve() if args.deps_from else None,
                                             args.coverage_map.resolve() if args.coverage_map else None)
+        superseded = newer_push(cc.ROOT, args.head, args.newest) if args.event == "push" else None
         ci, left_out, nightly_out = mcp_suites(root)
-        result = decide(args.event, plan, error, ci, left_out, nightly_out, args.advisory.split())
+        result = decide(args.event, plan, error, ci, left_out, nightly_out, args.advisory.split(), superseded)
         shards: list[str] = []
-        notes: list[str] = []
         if result["mcp"]["mode"] != "none":
             names = [f.rsplit("/", 1)[-1] for f in result["mcp"]["files"]]
             tests, why = list_tests(root, names)
@@ -502,13 +559,14 @@ def main(argv: list[str]) -> int:
                 # (a shard with no plan file: tools/ci/mcp_shard.sh fails it, and says why: no silent green)
                 shards = ["1"]
                 result["fallbacks"].append(f"the MCP shards could not be planned ({why}): the mcp lane fails")
-        doc = {"event": args.event, "full": args.event in ("full", "nightly"), "base": resolve(root, args.base) or args.base,
+        doc = {"event": args.event, "full": args.event in ("full", "nightly"), "base": resolve(root, base) or base,
                "head": resolve(root, "HEAD") or args.head, "lanes": result["lanes"], "unit_filter": result["unit_filter"],
                "unit_run": result["unit_run"], "unit_jobs": unit_job_names(result["unit_run"]),
                "asan_jobs": asan_job_names(planned_asan_run(result["lanes"], result["unit_run"])),
                "htmlui_filter": result["htmlui_filter"],
                "mcp": dict(result["mcp"], shards=shards), "fallbacks": result["fallbacks"], "notes": notes,
                "advisory_off": result["advisory_off"], "build_only": result["build_only"],
+               "superseded_by": superseded[0] if superseded else None,
                "files": plan["files"] if plan else None,
                "self_tests": plan["self_tests"] if plan else [],
                "checks": {"modules_off": plan["modules_off"] if plan else "", "navigation_off": bool(plan and plan["navigation_off"])}}
