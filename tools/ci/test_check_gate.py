@@ -246,6 +246,37 @@ class GateTest(unittest.TestCase):
         status, out = self.gate(needs_for(p, unit="failure"), p, reps(core=40, editor_1=30, editor_2=31))
         self.assertEqual(status, 1, out)
 
+    def test_every_asan_job_must_run_tests(self):
+        # ASan runs one job per test binary (asan-core, asan-editor): each planned one must report tests
+        p = plan()
+        p["asan_jobs"] = ["core", "editor"]
+
+        def reps(**ran):
+            out = [r for r in reports_for(p) if r["lane"] != "asan"]
+            for job, n in ran.items():
+                out.append({"lane": f"asan-{job}", "status": "success", "sha": "", "commands": [],
+                            "failures": [], "artifacts": [], "tests": {"ran": n, "failed": 0, "skipped": 0, "disabled": 0}})
+            return out
+
+        status, out = self.gate(needs_for(p), p, reps(core=40, editor=30))
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^asan-editor\s+success\s+ok \(30 tests\)$")
+        self.assertNotRegex(out, r"(?m)^asan\s")
+        status, out = self.gate(needs_for(p), p, reps(core=40, editor=0))
+        self.assertEqual(status, 1, out)
+        self.assertRegex(out, r"(?m)^asan-editor\s+success\s+FAIL: 0 tests ran$")
+        status, out = self.gate(needs_for(p), p, reps(editor=30))
+        self.assertEqual(status, 1, out)
+        self.assertRegex(out, r"(?m)^asan-core\s+success\s+FAIL: no report, so no proof tests ran$")
+        # advisory during rollout: listed, not failing
+        status, out = self.gate(needs_for(p), p, reps(core=40, editor=0), advisory="asan")
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^asan-editor\s+success\s+advisory \(rollout\): 0 tests ran$")
+        # only the planned binary: core alone
+        p["asan_jobs"] = ["core"]
+        status, out = self.gate(needs_for(p), p, reps(core=40))
+        self.assertEqual(status, 0, out)
+
     def test_zero_test_mcp_shard_fails(self):
         p = plan()
         status, out = self.gate(needs_for(p), p, reports_for(p, ran={"mcp-2": 0}))

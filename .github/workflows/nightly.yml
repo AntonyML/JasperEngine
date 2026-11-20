@@ -69,6 +69,18 @@ jobs:
             image: linux
             ccache: linux
             run: UNITY=1 tools/build.sh linux
+          # the test trees too: a file-local name two test sources define fails here, not in a user's
+          # unity build (each its own job: on 4 vCPUs the three cold builds are about 3 h in a row)
+          - name: Unity build (core tests)
+            id: unity-core-tests
+            image: linux
+            ccache: unit-core
+            run: UNITY=1 RUN=0 UNIT_SUITE=core tools/build.sh unit-tests
+          - name: Unity build (editor tests)
+            id: unity-editor-tests
+            image: linux
+            ccache: unit-core
+            run: UNITY=1 RUN=0 UNIT_SUITE=editor tools/build.sh unit-tests
           - name: Smoke tests (OpenGL, every fixture)
             id: smoke-opengl
             image: linux
@@ -108,6 +120,8 @@ jobs:
           max-size: 2G
           toolchain: ${{ steps.linux-tag.outputs.tag }}
       - name: ${{ matrix.suite.name }}
+        # under the job's 300: a step past its own timeout fails, where the job's timeout cancels it
+        timeout-minutes: 270
         env:
           RUN: ${{ matrix.suite.run }}
           ID: ${{ matrix.suite.id }}

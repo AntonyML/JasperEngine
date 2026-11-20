@@ -951,7 +951,7 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `lint` | the repository's and the workflows' lints |
 | `linux` | `WERROR=1 tools/build.sh linux`; its editor install feeds `mcp` and `smoke` |
 | `unit` (one job per test binary: `core`; `editor-1`, `editor-2`) | `UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>' WERROR=1 tools/build.sh unit-tests`, plus the scalar picking rerun (core); each editor part with `UNIT_SHARD=<k>/2`, after compiling half the objects (`UNIT_BUILD_PART=<k>/2`) and taking the other half from the other part (below) |
-| `asan` | `SANITIZE=address,undefined tools/build.sh unit-tests` |
+| `asan` (one job per test binary: `core`, `editor`) | `SANITIZE=address,undefined UNIT_SUITE=<suite> UNIT_TEST_ARGS='--gtest_filter=<f>-*GpuSlow*' tools/build.sh unit-tests`, the unit lane's filter without the `*GpuSlow*` suites (the nightly runs them under ASan) |
 | `htmlui` | `JASPER_HTMLUI_PERF_SLACK=3 tools/build.sh htmlui-tests` |
 | `mcp` (one job per shard) | `tools/ci/mcp_shard.sh <k> build/ci-plan`: the CI suite's planned files, `-j 2`, without the fixture project |
 | `smoke` | `SMOKE_METHOD=compile tools/smoke-test.sh tools/fixtures/post-processing`, the prebuilt `tools/fixtures/unified-lighting` and a project from each template |
@@ -963,8 +963,9 @@ Jobs of `ci.yml`; a lane's command is also its repro.
 | `check` | the one required status, `Check` (`tools/ci/check_gate.py`): green only when every lane that had to run passed |
 
 `Check` treats a skipped lane as passed only when `changes` said the lane was not needed. A test lane
-that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) without a
-report or that ran no test, or a merge-queue or full run that skipped a lane turns it red.
+that ran no test, an MCP shard that ran no file, a unit job (`unit-core`, `unit-editor-<k>`) or an
+ASan job (`asan-core`, `asan-editor`) without a report or that ran no test, or a merge-queue or full
+run that skipped a lane turns it red.
 
 **The editor parts.** The editor tests' build is most of their lane (runs 43737549764 and 43773511699:
 the build 110 and 137 min, the 5,268 tests 7 min). Each part (`tools/ci/plan_lanes.py` `UNIT_PARTS`)
@@ -994,7 +995,8 @@ Windows jobs' builds and the core tests' run included.
 | `changes`, `Check` | yes | yes | yes | yes |
 | `lint` | unless every path is one nothing reads | same | no | yes |
 | platform builds | when anything that builds changed | yes | yes, to warm the caches | yes |
-| `unit`, `asan`, `htmlui` | the suites the plan selects | all, unfiltered | no | all |
+| `unit`, `htmlui` | the suites the plan selects | all, unfiltered | build only (the caches, the deps dumps) | all |
+| `asan` | the unit lane's suites | all, unfiltered | no (it keeps no cache entry) | all |
 | `mcp` | the planned CI-suite files | the planned files, over the group's diff against `main` | no | the whole CI suite |
 | `smoke` | when a game-building path changed | yes | no | yes |
 
@@ -1015,22 +1017,42 @@ Windows jobs' builds and the core tests' run included.
   restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
   file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
   and prints the rest, the lane's working set, on every run; on `main` it cuts that to the lane's cap
-  (`max-size` in `ci.yml`), oldest-used first, and saves it. A cap below the working set loses the
-  start of the build, not all of it. The caps share GitHub's 10 GB per repository with the Gradle,
-  Vulkan SDK, uv and plan caches (about 1.2 GB), and the working sets (PR 26, no precompiled headers)
-  add up to more: linux 1.5 GB, unit-core 1.4, unit-editor 4.0, asan 5.3, htmlui 1.6, smoke 3.5,
-  web 0.5, android 0.6, macOS 1.6, Windows editor 0.9, Windows OpenGL 1.4. So linux, unit-core, web,
-  Android, macOS and the Windows editor and OpenGL jobs keep a whole one (8.6 GB of caps); unit-editor,
-  asan, htmlui and smoke keep none and build cold (their jobs still reuse what an earlier step of the
-  same job compiled), as do Windows D3D11 and Vulkan.
+  (`max-size` in `ci.yml`), oldest-used first, saves it and deletes the lane's older entry (`prune`;
+  the `caches` job, after every lane, deletes them again). Each lane's old and new entries would
+  otherwise both live until the push's slowest lane ended, and past the 10 GB GitHub evicts the least
+  recently used entries of any lane: during push run 44629653601 the repository held 11.7 GB, two
+  entries of linux, unit-core and Android, and the plan inputs, the coverage map and the Vulkan SDK
+  were gone. A cap below the working set loses the start of the build, not all of it. The caches
+  share GitHub's 10 GB per repository (the repository's `max_cache_size_gb`); working sets from each
+  lane's `ccache-save` (no precompiled headers), sizes as saved:
+
+  | Cache | Working set (GB) | Cap | Entry |
+  |---|---|---|---|
+  | linux | 1.5 (saved 1.44-1.46) | 1.6G | yes |
+  | unit-core | 1.34 | 1.4G | yes |
+  | macOS | 1.30-1.37 | 1.4G | yes |
+  | htmlui | 1.66 (2,176 compiles, Release) | 1.7G | yes |
+  | Windows editor | 0.91 | 1.0G | yes |
+  | Android | 0.63 | 0.7G | yes |
+  | web | 0.48 | 0.6G | yes |
+  | Gradle, Vulkan SDK, plan inputs, coverage map, MCP timings | 0.73, 0.21, under 0.01 each | | yes |
+  | Windows OpenGL | 1.4 | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
+  | unit-editor | 4.0 | | no |
+  | asan-core, asan-editor | 5.3 both (one job, PR 26) | | no: neither binary's fits what is left, so ASan does not run on push |
+  | smoke | 3.5 | | no |
+
+  At most 8.4 GB of caps plus 0.95 GB of the rest, 9.35 GB (8.8 GB at these working sets). A cache
+  with no entry builds cold, its job still reusing what an earlier step of the same job compiled, as
+  do Windows D3D11 and Vulkan. A lane that gives its entry up has its prefix in the `caches` job's
+  second list, so its last entry goes at once instead of holding the budget for 7 days.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases
 
 - **Nightly** (`nightly.yml`, 03:17 UTC, or dispatched): the slow configurations (HTML UI on Vulkan
-  and under ASan, TSan, texture formats on lavapipe, the unity build, every fixture's smoke on
-  OpenGL, GLES3 and Vulkan through `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt
-  player parity) and the whole MCP CI suite, which also refreshes the coverage map and the shard
+  and under ASan, TSan, texture formats on lavapipe, the unity builds of the editor, the engine and
+  both unit-test trees, every fixture's smoke on OpenGL, GLES3 and Vulkan through
+  `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt player parity) and the whole MCP CI suite, which also refreshes the coverage map and the shard
   timings. A failure opens or updates the issue
   labelled `nightly`. When `main` moved, it publishes the prerelease `nightly-YYYYMMDD` (the newest 14
   are kept); the slow lanes do not hold it back.
@@ -1106,6 +1128,10 @@ the rest is estimated from the non-ASan times (GPU tests 1.9 times slower under 
 from the tests both measured): the core tests about 132 min, of which five GPU tests 37 min, now
 `*GpuSlow` (a full local ASan run, a loaded host: 74 of 222 min); `VoxelSoakSlow.IncrementalEqualsRebuild`
 (about 10 min, CPU) stays. The editor tests under ASan: 62 min for the 4,308 a local run reached.
+In one job (merge-queue runs 44416194181, 44487933891, 44582664923, 44582666848) the cold core build took
+79-116 min, the core tests 90 and the editor's build 168-175, so the 270-min step ended before the
+editor tests: hence a job per binary, cold about 3-3.5 h for core and 3.7-4.6 h for the editor (its
+tests estimated).
 
 ### Pins
 

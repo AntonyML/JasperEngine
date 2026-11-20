@@ -86,6 +86,10 @@ TEST_REPORTS = {"windows-editor-tests": "windows"}
 # the unit matrix's jobs (tools/ci/plan_lanes.py unit_jobs): a test binary, or part K of one
 UNIT_JOB_RE = re.compile(r"^(core|editor)(-[0-9]{1,2})?$")
 UNIT_REPORT_RE = re.compile(r"^unit-(core|editor)(-[0-9]{1,2})?$")
+# the asan matrix's jobs (tools/ci/plan_lanes.py asan_jobs): a test binary each; the nightly's own ASan
+# jobs (asan-gpu-slow, htmlui-asan) are lanes of their own
+ASAN_JOB_RE = re.compile(r"^(core|editor)$")
+ASAN_REPORT_RE = re.compile(r"^asan-(core|editor)$")
 
 
 # where a lane's repro runs, when that is not the Linux images
@@ -833,7 +837,8 @@ def load_reports(directory: Path) -> dict[str, dict]:
 def load_lanes(path: Path | None) -> dict:
     """lanes.json (tools/ci/plan_lanes.py), reduced to what render and check_gate read."""
     data = load_json(path) if path else None
-    out = {"ok": False, "event": "", "full": False, "lanes": {}, "shards": [], "not_in_ci": [], "unit_jobs": []}
+    out = {"ok": False, "event": "", "full": False, "lanes": {}, "shards": [], "not_in_ci": [], "unit_jobs": [],
+           "asan_jobs": []}
     if not isinstance(data, dict) or not isinstance(data.get("lanes"), dict):
         return out
     out["ok"] = True
@@ -848,6 +853,9 @@ def load_lanes(path: Path | None) -> dict:
     else:
         unit_run = data.get("unit_run") if isinstance(data.get("unit_run"), dict) else {}
         out["unit_jobs"] = [s for s in ("core", "editor") if unit_run.get(s) is True]
+    # the asan matrix's jobs (asan-<job> reports); a plan without them had one asan job
+    if isinstance(data.get("asan_jobs"), list):
+        out["asan_jobs"] = [j for j in data["asan_jobs"][:20] if isinstance(j, str) and ASAN_JOB_RE.match(j)]
     mcp = data.get("mcp") if isinstance(data.get("mcp"), dict) else {}
     out["shards"] = [s for s in (mcp.get("shards") or [])[:100] if isinstance(s, str) and re.match(r"^[0-9A-Za-z_-]{1,20}$", s)] \
         if isinstance(mcp.get("shards"), list) else []
@@ -911,6 +919,9 @@ def lane_label(lane: str, shards: list[str], unit_jobs: list[str] = ()) -> str:
             return f"unit ({m.group(1)})"
         parts = sum(1 for j in unit_jobs if j.startswith(m.group(1) + "-"))
         return f"unit ({m.group(1)} {m.group(2)}/{parts})" if parts else f"unit ({m.group(1)} {m.group(2)})"
+    m = ASAN_REPORT_RE.match(lane)
+    if m:
+        return f"asan ({m.group(1)})"
     m = re.match(r"^windows-(.+)$", lane)
     if m:
         return f"windows ({m.group(1)})"
@@ -921,17 +932,20 @@ def lane_base(lane: str) -> str:
     for base in ("mcp", "windows"):
         if lane.startswith(base + "-"):
             return base
-    return "unit" if UNIT_REPORT_RE.match(lane) else lane
+    return "unit" if UNIT_REPORT_RE.match(lane) else "asan" if ASAN_REPORT_RE.match(lane) else lane
 
 
-def lane_jobs(name: str, shards: list[str], event: str = "", unit_jobs: list[str] = ()) -> list[str]:
+def lane_jobs(name: str, shards: list[str], event: str = "", unit_jobs: list[str] = (),
+              asan_jobs: list[str] = ()) -> list[str]:
     """The reports a planned lane makes: one per MCP shard, one per unit job (a test binary, or a part
-    of one), one per Windows leg (and the editor leg's test run but on push, which builds only), else
-    its own."""
+    of one), one per asan job (a test binary), one per Windows leg (and the editor leg's test run but on
+    push, which builds only), else its own."""
     if name == "mcp" and shards:
         return [f"mcp-{s}" for s in shards]
     if name == "unit" and unit_jobs:
         return [f"unit-{j}" for j in unit_jobs]
+    if name == "asan" and asan_jobs:
+        return [f"asan-{j}" for j in asan_jobs]
     if name == "windows":
         return [f"windows-{p}" for p in WINDOWS_PARTS] + ([] if event == "push" else list(TEST_REPORTS))
     return [name]
@@ -1036,6 +1050,7 @@ def render(reports: dict[str, dict], lanes: dict, run_url: str, sha: str, adviso
     needs = needs if isinstance(needs, dict) else {}
     shards = lanes["shards"]
     unit_jobs = lanes["unit_jobs"]
+    asan_jobs = lanes["asan_jobs"]
     advisory_set = {a for a in advisory if LANE_RE.match(a)}
 
     # every lane that ran, in the plan's order; a shard per MCP shard
@@ -1043,7 +1058,7 @@ def render(reports: dict[str, dict], lanes: dict, run_url: str, sha: str, adviso
     for name, lane in lanes["lanes"].items():
         if name in ("report", "check") or not lane["run"]:
             continue
-        expected += lane_jobs(name, shards, lanes["event"], unit_jobs)
+        expected += lane_jobs(name, shards, lanes["event"], unit_jobs, asan_jobs)
     expected += [name for name in reports if name not in expected]
     states: dict[str, str] = {}
     for name in expected:
@@ -1086,7 +1101,7 @@ def render(reports: dict[str, dict], lanes: dict, run_url: str, sha: str, adviso
             if not lane["run"]:
                 passed.append(f"{name} (skipped: {md(lane['why']) or 'not needed'})")
                 continue
-            for n in lane_jobs(name, shards, lanes["event"], unit_jobs):
+            for n in lane_jobs(name, shards, lanes["event"], unit_jobs, asan_jobs):
                 if states.get(n) == "success":
                     tests = reports[n]["tests"]["ran"] if n in reports else 0
                     label = lane_label(n, shards, unit_jobs)
@@ -1131,7 +1146,7 @@ def render(reports: dict[str, dict], lanes: dict, run_url: str, sha: str, adviso
             if not lane["run"]:
                 details.append(f"- {name}: skipped ({md(lane['why']) or 'not needed'})")
                 continue
-            for n in lane_jobs(name, shards, lanes["event"], unit_jobs):
+            for n in lane_jobs(name, shards, lanes["event"], unit_jobs, asan_jobs):
                 state = {"success": "passed", "missing": "no report"}.get(states.get(n, "missing"), states.get(n, ""))
                 details.append(f"- {lane_label(n, shards, unit_jobs)}: {state}{count_note(reports[n]) if n in reports else ''}")
         for name in expected:

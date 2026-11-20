@@ -684,6 +684,16 @@ class LaneNameTest(unittest.TestCase):
         self.assertEqual(report.lane_jobs("unit", [], "pull_request", jobs), ["unit-core", "unit-editor-1", "unit-editor-2"])
         self.assertEqual(report.lane_jobs("unit", [], "pull_request"), ["unit"])
 
+    def test_asan_jobs_name_their_lane(self):
+        # one asan job per test binary (tools/ci/plan_lanes.py asan_jobs), each its own report
+        self.assertEqual((report.lane_label("asan-core", []), report.lane_base("asan-core")), ("asan (core)", "asan"))
+        self.assertEqual((report.lane_label("asan-editor", []), report.lane_base("asan-editor")), ("asan (editor)", "asan"))
+        self.assertEqual(report.lane_jobs("asan", [], "pull_request", asan_jobs=["core", "editor"]), ["asan-core", "asan-editor"])
+        self.assertEqual(report.lane_jobs("asan", [], "pull_request"), ["asan"])
+        # the nightly's ASan jobs are lanes of their own, not parts of asan
+        for nightly in ("asan-gpu-slow", "htmlui-asan"):
+            self.assertEqual((report.lane_label(nightly, []), report.lane_base(nightly)), (nightly, nightly))
+
 
 class UnitJobsTest(unittest.TestCase):
     RUN = "https://github.com/o/r/actions/runs/812"
@@ -707,6 +717,28 @@ class UnitJobsTest(unittest.TestCase):
         # a plan from before the editor's parts: a job per planned binary
         self.assertEqual(self.lanes(unit_run={"core": True, "editor": True})["unit_jobs"], ["core", "editor"])
         self.assertEqual(self.lanes()["unit_jobs"], [])
+
+    def test_load_lanes_reads_the_asan_jobs(self):
+        self.assertEqual(self.lanes(asan_jobs=["core", "editor"])["asan_jobs"], ["core", "editor"])
+        # not a job name: dropped (lanes.json is untrusted)
+        self.assertEqual(self.lanes(asan_jobs=["core", "editor-1", "../x", 3])["asan_jobs"], ["core"])
+        # a plan from before the split: one asan job
+        self.assertEqual(self.lanes()["asan_jobs"], [])
+
+    def test_a_missing_asan_job_is_reported(self):
+        reports_dir = self.dir / "reports"
+        reports_dir.mkdir()
+        names = ["changes", "lint", "linux", "unit", "smoke", "web", "android", "macos", "ios", "mcp-1", "mcp-2", "asan-core"]
+        names += [f"windows-{p}" for p in report.WINDOWS_PARTS] + list(report.TEST_REPORTS)
+        for n in names:
+            r = lane_report(n, ran=7 if n.startswith(("unit", "mcp", "asan")) or n in report.TEST_REPORTS else 0)
+            (reports_dir / f"{n}.json").write_text(json.dumps(r))
+        lanes = self.lanes(asan_jobs=["core", "editor"])
+        lanes["lanes"]["htmlui"] = {"run": False, "why": "no HTML UI change"}
+        body = report.render(report.load_reports(reports_dir), lanes, self.RUN, "3f2c1ab" + "0" * 33, [])
+        self.assertIn("No report from: asan (editor)", body)
+        self.assertIn("asan (core): passed, 7 tests", body)
+        self.assertNotIn("- asan:", body)
 
     def test_a_missing_part_is_reported(self):
         reports_dir = self.dir / "reports"
