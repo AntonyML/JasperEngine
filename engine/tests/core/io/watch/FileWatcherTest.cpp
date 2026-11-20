@@ -293,7 +293,7 @@ namespace {
         }
         bool waitArrived(int count) {
             std::unique_lock<std::mutex> lock(mutex);
-            return jobs::detail::timedWait(changed, lock, timeLimit(ms(5000)), [&]() { return arrived >= count; });
+            return jobs::detail::timedWait(changed, lock, timeLimit(fileWatcherMs(5000)), [&]() { return arrived >= count; });
         }
         void allow(int count) {
             std::lock_guard<std::mutex> lock(mutex);
@@ -338,7 +338,7 @@ TEST_P(FileWatcherPolling, DeleteRecreateAcrossALateScan) {
     gate->release();
 
     const std::vector<FileChange> got = collect(1);
-    ASSERT_EQ(got.size(), 1u) << describe(got);
+    ASSERT_EQ(got.size(), 1u) << fileWatcherDescribe(got);
     EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
     EXPECT_EQ(got[0].path, target);
 }

@@ -250,7 +250,7 @@ TEST_F(FileChangeCoalescerTests, UnderPollingARemovalWaitsForTheNextScanOfItsBac
     raw(Type::Removed, "/p/b.png");
     raw(Type::ScanDone, "");
     EXPECT_EQ(kinds(run(2000)), "") << "no time lets a removal go";
-    EXPECT_EQ(coalescer.nextDeadline(), Clock::time_point::max());
+    EXPECT_EQ(coalescer.nextDeadline(), FileChangeCoalescerClock::time_point::max());
     EXPECT_TRUE(coalescer.awaitingScan());
     // a linked folder's scan is not the project's
     coalescer.add(watch::RawEvent{Type::ScanDone, {}, {}, false, 1}, now);
