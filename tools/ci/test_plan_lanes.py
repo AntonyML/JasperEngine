@@ -35,8 +35,12 @@ def plan(files, builds=("linux",), unit=None, mcp=(), fallbacks=(), selected=Non
             "fallbacks": list(fallbacks), "self_tests": [], "modules_off": "", "navigation_off": False}
 
 
-def decide(event, p, error=""):
-    return pl.decide(event, p, error, CI, LEFT_OUT, NIGHTLY_OUT)
+# ci.yml's ADVISORY_LANES during the rollout
+ADVISORY = ("unit", "asan", "htmlui", "mcp", "smoke", "windows-editor-tests")
+
+
+def decide(event, p, error="", advisory=()):
+    return pl.decide(event, p, error, CI, LEFT_OUT, NIGHTLY_OUT, **({"advisory": advisory} if advisory else {}))
 
 
 def runs(result):
@@ -130,6 +134,45 @@ class Rules(unittest.TestCase):
         r = decide("merge_group", plan(["editor/App.cpp"]))
         self.assertEqual(runs(r), set(pl.LANES) - {"mcp"})
 
+    def test_merge_group_leaves_the_advisory_lanes_out(self):
+        # an advisory lane cannot block a merge, so the queue does not wait hours for it (queue runs
+        # of #124-#126: 217-276 min, ASan the longest, the slowest blocking job 96-137)
+        p = plan(["editor/App.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": []}, mcp=["test_b.py"])
+        r = decide("merge_group", p, advisory=ADVISORY)
+        self.assertEqual(runs(r), {"changes", "lint", *pl.PLATFORM_LANES})
+        self.assertEqual(r["advisory_off"], ["unit", "asan", "htmlui", "mcp", "smoke", "windows-editor-tests"])
+        # the windows editor leg still builds, without its advisory test run
+        self.assertEqual(r["build_only"], ["windows-editor-tests"])
+        for name in ("unit", "asan", "htmlui", "mcp", "smoke"):
+            self.assertIn("ADVISORY_LANES", r["lanes"][name]["why"], name)
+        self.assertEqual(r["mcp"], {"mode": "none", "files": [], "not_in_ci": []})
+        # it follows the list: a lane taken off it runs in the queue again
+        r = decide("merge_group", p, advisory=("unit", "htmlui", "mcp", "smoke"))
+        self.assertEqual(runs(r), set(pl.LANES) - {"unit", "htmlui", "mcp", "smoke"})
+        self.assertEqual((r["advisory_off"], r["build_only"]), (["unit", "htmlui", "mcp", "smoke"], []))
+        self.assertEqual(pl.asan_job_names(pl.planned_asan_run(r["lanes"], r["unit_run"])), ["core", "editor"])
+        self.assertEqual(decide("merge_group", p, advisory=()), decide("merge_group", p))
+        self.assertEqual(runs(decide("merge_group", p)), set(pl.LANES))
+        # only the lanes the push to main runs instead: lint and the platform builds stay in the queue
+        r = decide("merge_group", p, advisory=("lint", "linux", "windows", "mcp"))
+        self.assertEqual(runs(r), set(pl.LANES) - {"mcp"})
+        self.assertEqual(r["advisory_off"], ["mcp"])
+        # however the queue widened: a .github change, no plan
+        for q in (plan([".github/workflows/ci.yml"], builds=()), None):
+            r = decide("merge_group", q, "exit 2", advisory=ADVISORY)
+            self.assertEqual(runs(r), {"changes", "lint", *pl.PLATFORM_LANES}, q)
+        # a group nothing reads runs nothing, and leaves nothing out for being advisory
+        r = decide("merge_group", plan(["README.md"], builds=()), advisory=ADVISORY)
+        self.assertEqual((runs(r), r["advisory_off"], r["build_only"]), ({"changes"}, [], []))
+
+    def test_advisory_lanes_change_no_pull_request_and_no_full_run(self):
+        for event, p in (("pull_request", plan(["engine/core/Foo.cpp"], unit="all", mcp=["test_a.py"])),
+                         ("pull_request", plan([".github/workflows/ci.yml"])), ("full", None), ("nightly", None),
+                         ("workflow_dispatch", plan(["editor/App.cpp"], mcp=["test_a.py"]))):
+            r = decide(event, p, advisory=ADVISORY)
+            self.assertEqual(r, decide(event, p), event)
+            self.assertEqual((r["advisory_off"], r["build_only"]), ([], []), event)
+
     def test_push_runs_the_builds_only(self):
         r = decide("push", plan(["engine/core/Foo.cpp"], mcp=["test_a.py"]))
         self.assertEqual(runs(r), {"changes", "unit", "htmlui", "smoke", *pl.PLATFORM_LANES})
@@ -137,6 +180,32 @@ class Rules(unittest.TestCase):
         self.assertEqual(r["mcp"]["mode"], "none")
         # ASan keeps no ccache entry (the 10 GB budget): a build on push would warm nothing
         self.assertIn("no ccache entry", r["lanes"]["asan"]["why"])
+        self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
+
+    def test_push_runs_what_the_queue_left_out(self):
+        # the merge queue does not run the advisory lanes, so the push to main does: every merged change
+        # still gets their results, as the queue would have run them
+        p = plan(["editor/window/InspectorX.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": ["Css"]},
+                 mcp=["test_a.py", "test_fixture.py"])
+        r = decide("push", p, advisory=ADVISORY)
+        self.assertEqual(runs(r), set(pl.LANES) - {"lint"})
+        self.assertEqual((r["build_only"], r["advisory_off"]), ([], []))
+        self.assertEqual((r["unit_run"], r["unit_filter"], r["htmlui_filter"]),
+                         ({"core": True, "editor": True}, {"core": "", "editor": ""}, ""))
+        self.assertEqual(r["mcp"], decide("merge_group", p)["mcp"])
+        self.assertEqual(r["mcp"]["files"], ["tools/mcp/tests/test_a.py"])
+        for name in ("unit", "asan", "htmlui", "mcp", "smoke"):
+            self.assertIn("ADVISORY_LANES", r["lanes"][name]["why"], name)
+        # (smoke: every game export, as in the queue, not only the cache warming)
+        self.assertIn("every game export", r["lanes"]["smoke"]["why"])
+        # it follows the list: a lane taken off it is the queue's again, and the push builds only
+        r = decide("push", p, advisory=("mcp",))
+        self.assertEqual(runs(r), {"changes", "unit", "htmlui", "mcp", *pl.PLATFORM_LANES})
+        self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
+        self.assertIn("build only", r["lanes"]["unit"]["why"])
+        # a push nothing reads runs nothing
+        r = decide("push", plan(["README.md"], builds=()), advisory=ADVISORY)
+        self.assertEqual((runs(r), r["build_only"]), ({"changes"}, []))
 
     def test_push_warms_the_smoke_cache_when_an_export_reads_the_change(self):
         # only main saves caches, so a smoke lane that never runs on push never warms its ccache
@@ -177,7 +246,8 @@ class Rules(unittest.TestCase):
         lines = pl.github_output(doc, r["unit_run"]).splitlines()
         keys = [line.split("=", 1)[0] for line in lines]
         self.assertEqual(keys, ["full", *[f"run_{n}" for n in pl.LANES], "unit_filter_core", "unit_filter_editor",
-                                "unit_run_core", "unit_run_editor", "unit_jobs", "asan_jobs", "htmlui_filter", "mcp_shards"])
+                                "unit_run_core", "unit_run_editor", "unit_jobs", "asan_jobs", "htmlui_filter", "mcp_shards",
+                                "build_only"])
         self.assertIn("unit_filter_core=Foo.*:*/Foo.*:Foo/*.*", lines)
         self.assertIn('mcp_shards=["1","2"]', lines)
         self.assertIn("unit_run_editor=false", lines)
@@ -187,6 +257,10 @@ class Rules(unittest.TestCase):
         self.assertIn('asan_jobs=[{"job":"core","suite":"core"}]', lines)
         doc["mcp"]["shards"] = []
         self.assertIn("mcp_shards=[]", pl.github_output(doc, r["unit_run"]).splitlines())
+        # the jobs that build but skip a test run (fromJSON in ci.yml: a list even when empty)
+        self.assertIn("build_only=[]", pl.github_output(doc, r["unit_run"]).splitlines())
+        self.assertIn('build_only=["windows-editor-tests"]',
+                      pl.github_output(dict(doc, build_only=["windows-editor-tests"]), r["unit_run"]).splitlines())
         both = [line for line in pl.github_output(doc, {"core": True, "editor": True}).splitlines() if line.startswith("unit_jobs=")]
         self.assertEqual(json.loads(both[0].split("=", 1)[1]), [
             {"job": "core", "suite": "core", "part": "", "other": ""},
@@ -362,6 +436,20 @@ class Runs(unittest.TestCase):
         self.assertEqual(doc["mcp"]["shards"], ["1"])
         self.assertFalse((self.tmp / "out/mcp-plan/plan-1.json").exists())
         self.assertTrue(any("could not be planned" in f for f in doc["fallbacks"]), doc["fallbacks"])
+
+    def test_the_queue_reads_the_advisory_lanes(self):
+        head = self.commit("tools/mcp/tests/test_a.py", TEST_FILE.format(extra="# changed"))
+        gh = self.tmp / "gh.txt"
+        code, doc, out = self.run_main("--event", "merge_group", "--base", self.base, "--head", head,
+                                       "--out-dir", str(self.tmp / "out"), "--github-output", str(gh),
+                                       "--advisory", " ".join(ADVISORY))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(doc["advisory_off"], ["unit", "asan", "htmlui", "mcp", "smoke", "windows-editor-tests"])
+        self.assertEqual((doc["mcp"]["mode"], doc["mcp"]["shards"], doc["asan_jobs"]), ("none", [], []))
+        lines = gh.read_text().splitlines()
+        for line in ("run_unit=false", "run_asan=false", "run_mcp=false", "run_linux=true", "asan_jobs=[]", "mcp_shards=[]",
+                     'build_only=["windows-editor-tests"]'):
+            self.assertIn(line, lines)
 
     def test_unusable_arguments_exit_2(self):
         with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):
