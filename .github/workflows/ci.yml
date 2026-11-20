@@ -220,7 +220,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: linux
-          max-size: 0.9G
+          max-size: 0.95G
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: Build the editor and the engine sample project
@@ -486,7 +486,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: asan-${{ matrix.suite }}
-          max-size: ${{ matrix.suite == 'core' && '0.75G' || '1.6G' }}
+          max-size: ${{ matrix.suite == 'core' && '0.8G' || '1.7G' }}
           toolchain: ${{ steps.image.outputs.tag }}
       # GPU suites included: they run under Xvfb on Mesa (tools/sanitizers/lsan.supp); the unit lane's
       # filters; a push builds the tree for the cache
@@ -544,7 +544,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: htmlui
-          max-size: 0.8G
+          max-size: 0.85G
           toolchain: ${{ steps.image.outputs.tag }}
       # the performance tests' targets on a shared 4-vCPU runner (compat/PerfFixtures.h)
       - name: jasperengine-htmlui-tests (OpenGL)
@@ -677,11 +677,11 @@ jobs:
         with:
           target: linux
       # the player runtime and the two Compile builds (tools/smoke-test.sh mounts the same directory): 1.9 GB,
-      # of which what is left of the budget keeps the last-used, the second Compile build (docs/testing.md "CI")
+      # of which what is left of the budget keeps the last-used part, the second Compile build (docs/testing.md "CI")
       - uses: ./.github/actions/ccache-restore
         with:
           lane: smoke
-          max-size: 0.7G
+          max-size: 0.5G
           toolchain: ${{ steps.image.outputs.tag }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -768,7 +768,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: web
-          max-size: 0.25G
+          max-size: 0.3G
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: Web presets and option errors
@@ -1050,7 +1050,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: macos
-          max-size: 0.85G
+          max-size: 0.9G
 
       - name: Editor (arm64)
         run: tools/ci/macos.sh editor
