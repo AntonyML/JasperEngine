@@ -180,6 +180,32 @@ class Rules(unittest.TestCase):
         self.assertEqual(r["mcp"]["mode"], "none")
         # ASan keeps no ccache entry (the 10 GB budget): a build on push would warm nothing
         self.assertIn("no ccache entry", r["lanes"]["asan"]["why"])
+        self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
+
+    def test_push_runs_what_the_queue_left_out(self):
+        # the merge queue does not run the advisory lanes, so the push to main does: every merged change
+        # still gets their results, as the queue would have run them
+        p = plan(["editor/window/InspectorX.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": ["Css"]},
+                 mcp=["test_a.py", "test_fixture.py"])
+        r = decide("push", p, advisory=ADVISORY)
+        self.assertEqual(runs(r), set(pl.LANES) - {"lint"})
+        self.assertEqual((r["build_only"], r["advisory_off"]), ([], []))
+        self.assertEqual((r["unit_run"], r["unit_filter"], r["htmlui_filter"]),
+                         ({"core": True, "editor": True}, {"core": "", "editor": ""}, ""))
+        self.assertEqual(r["mcp"], decide("merge_group", p)["mcp"])
+        self.assertEqual(r["mcp"]["files"], ["tools/mcp/tests/test_a.py"])
+        for name in ("unit", "asan", "htmlui", "mcp", "smoke"):
+            self.assertIn("ADVISORY_LANES", r["lanes"][name]["why"], name)
+        # (smoke: every game export, as in the queue, not only the cache warming)
+        self.assertIn("every game export", r["lanes"]["smoke"]["why"])
+        # it follows the list: a lane taken off it is the queue's again, and the push builds only
+        r = decide("push", p, advisory=("mcp",))
+        self.assertEqual(runs(r), {"changes", "unit", "htmlui", "mcp", *pl.PLATFORM_LANES})
+        self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
+        self.assertIn("build only", r["lanes"]["unit"]["why"])
+        # a push nothing reads runs nothing
+        r = decide("push", plan(["README.md"], builds=()), advisory=ADVISORY)
+        self.assertEqual((runs(r), r["build_only"]), ({"changes"}, []))
 
     def test_push_warms_the_smoke_cache_when_an_export_reads_the_change(self):
         # only main saves caches, so a smoke lane that never runs on push never warms its ccache

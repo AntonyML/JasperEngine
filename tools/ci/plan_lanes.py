@@ -17,9 +17,10 @@ applies CI's stricter rules:
   the test lanes and test runs --advisory names (ci.yml's ADVISORY_LANES): they cannot block a merge,
   so the queue does not wait for them (listed under advisory_off; a test run of a job that still
   builds, under build_only too). Lint and the platform builds stay whatever the list says;
-- push: the build lanes only (caches and plan inputs; the tests ran in the merge queue), not ASan, which
-  keeps no cache entry, and smoke when a game's export reads the change, so its Compile builds' ccache
-  stays warm;
+- push: the build lanes (caches and plan inputs), not ASan, which keeps no cache entry, and smoke when a
+  game's export reads the change, so its Compile builds' ccache stays warm; the test lanes build only
+  (build_only: their tests ran in the merge queue), but for the advisory ones the queue left out, which
+  run as the queue would have run them;
 - full (workflow_dispatch with full: true): every lane, the whole MCP CI suite;
 - nightly: as full, and MCP also runs the CI_EXCLUDED files CI can run (NIGHTLY_LEFT_OUT says which
   it cannot);
@@ -222,6 +223,8 @@ def decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_o
     result["build_only"] = []
     if event == "merge_group":
         leave_advisory_out(result, set(advisory))
+    elif event == "push":
+        run_advisory_on_push(result, set(advisory), _decide("merge_group", plan, plan_error, ci, left_out, nightly_out))
     result["lanes"] = {name: result["lanes"][name] for name in LANES}
     return result
 
@@ -242,6 +245,28 @@ def leave_advisory_out(result: dict, advisory: set[str]) -> None:
     for test_run, job in report.TEST_REPORTS.items():
         if test_run in advisory and lanes[job]["run"]:
             result["advisory_off"].append(test_run)
+            result["build_only"].append(test_run)
+
+
+def run_advisory_on_push(result: dict, advisory: set[str], queue: dict) -> None:
+    """The push to main: what the merge queue left out for being advisory, as the queue would have run
+    it (queue: its plan without --advisory); the other test lanes and test runs build only."""
+    lanes = result["lanes"]
+    if not any(entry["run"] for name, entry in lanes.items() if name != "changes"):
+        return
+    for name in QUEUE_DEFERRABLE:
+        if name in advisory:
+            lanes[name] = {"run": queue["lanes"][name]["run"],
+                           "why": f"push to main: advisory (ADVISORY_LANES), so not run in the merge queue: "
+                                  f"{queue['lanes'][name]['why']}"}
+        elif name in ("unit", "htmlui"):
+            result["build_only"].append(name)
+    if "mcp" in advisory:
+        result["mcp"] = queue["mcp"]
+    if advisory & set(QUEUE_DEFERRABLE):
+        result["fallbacks"].extend(f for f in queue["fallbacks"] if f not in result["fallbacks"])
+    for test_run, job in report.TEST_REPORTS.items():
+        if lanes[job]["run"] and test_run not in advisory:
             result["build_only"].append(test_run)
 
 

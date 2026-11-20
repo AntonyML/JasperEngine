@@ -209,6 +209,38 @@ class GateTest(unittest.TestCase):
         self.assertEqual(status, 0, out)
         self.assertRegex(out, r"(?m)^unit\s+success\s+ok \(build only on push\)$")
 
+    def test_push_runs_the_advisory_lanes_tests(self):
+        # the merge queue left them to the push (tools/ci/plan_lanes.py): build_only names what still only builds
+        p = plan(event="push", off=("lint",))
+        p["build_only"] = []
+        status, out = self.gate(needs_for(p), p, reports_for(p) + [
+            {"lane": "windows-editor-tests", "status": "success", "sha": "", "commands": [], "failures": [], "artifacts": [],
+             "tests": {"ran": 900, "failed": 0, "skipped": 0, "disabled": 0}}])
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^unit\s+success\s+ok \(50 tests\)$")
+        self.assertRegex(out, r"(?m)^windows-editor-tests\s+success\s+ok \(900 tests\)$")
+        advisory = "unit asan htmlui mcp smoke windows-editor-tests"
+        status, out = self.gate(needs_for(p), p, reports_for(p, ran={"unit": 0}), advisory=advisory)
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^unit\s+success\s+advisory \(rollout\): 0 tests ran$")
+        self.assertRegex(out, r"(?m)^windows-editor-tests\s+missing\s+advisory \(rollout\): no report, so no proof tests ran$")
+        # the push's test steps continue on error (the job's result is its build's, which the caches
+        # follow): the report's own status says the tests failed
+        reps = [dict(r, status="failure") if r["lane"] == "htmlui" else r for r in reports_for(p)]
+        status, out = self.gate(needs_for(p), p, reps, advisory=advisory)
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^htmlui\s+success\s+advisory \(rollout\): failing$")
+        status, out = self.gate(needs_for(p), p, reps)
+        self.assertEqual(status, 1, out)
+        self.assertRegex(out, r"(?m)^htmlui\s+success\s+FAIL: failing$")
+        # what the push builds only needs no test
+        p["build_only"] = ["unit", "htmlui", "windows-editor-tests"]
+        status, out = self.gate(needs_for(p), p, reports_for(p, ran={"unit": 0, "htmlui": 0}))
+        self.assertEqual(status, 0, out)
+        self.assertRegex(out, r"(?m)^htmlui\s+success\s+ok \(build only on push\)$")
+        self.assertRegex(out, r"(?m)^asan\s+success\s+ok \(50 tests\)$")
+        self.assertNotIn("windows-editor-tests", out)
+
     def test_zero_test_unit_suite_fails(self):
         p = plan()
         p["unit_run"] = {"core": True, "editor": True}

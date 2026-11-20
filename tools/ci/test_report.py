@@ -684,6 +684,21 @@ class WindowsLegsTest(unittest.TestCase):
         self.assertNotIn("No report from", body)
         self.assertIn("unit (skipped: the merge queue", body)
 
+    def test_the_push_expects_the_editor_tests_unless_it_builds_only(self):
+        names = ["changes", "linux", "unit", "asan", "htmlui", "smoke", "web", "android", "macos", "ios", "mcp-1", "mcp-2"]
+        legs = [f"windows-{p}" for p in report.WINDOWS_PARTS]
+        reports = [lane_report(n, ran=5 if n in ("unit", "asan", "htmlui", "mcp-1", "mcp-2") else 0) for n in names + legs]
+        lanes = dict(lanes_json(lint=(False, "push to main")), event="push", build_only=[])
+        body = self.render(reports, lanes)
+        self.assertIn("No report from: windows (editor-tests)", body)
+        for old in self.reports.glob("*.json"):
+            old.unlink()
+        for plan in (dict(lanes, build_only=["unit", "htmlui", "windows-editor-tests"]),
+                     {k: v for k, v in lanes.items() if k != "build_only"}):    # (a plan from before build_only)
+            body = self.render(reports, plan)
+            self.assertNotIn("No report from", body)
+            self.assertNotIn("editor-tests", body)
+
     def test_a_skipped_windows_lane_has_no_legs(self):
         names = ["changes", "lint", "linux", "unit", "asan", "htmlui", "smoke", "web", "android", "macos", "ios", "mcp-1", "mcp-2"]
         reports = [lane_report(n, ran=5 if n in ("unit", "asan", "htmlui", "mcp-1", "mcp-2") else 0) for n in names]
@@ -707,15 +722,15 @@ class LaneNameTest(unittest.TestCase):
         self.assertEqual((report.lane_label("unit-editor-2", [], jobs), report.lane_base("unit-editor-2")),
                          ("unit (editor 2/2)", "unit"))
         self.assertEqual(report.lane_label("unit-core", [], jobs), "unit (core)")
-        self.assertEqual(report.lane_jobs("unit", [], "pull_request", jobs), ["unit-core", "unit-editor-1", "unit-editor-2"])
-        self.assertEqual(report.lane_jobs("unit", [], "pull_request"), ["unit"])
+        self.assertEqual(report.lane_jobs("unit", [], jobs), ["unit-core", "unit-editor-1", "unit-editor-2"])
+        self.assertEqual(report.lane_jobs("unit", []), ["unit"])
 
     def test_asan_jobs_name_their_lane(self):
         # one asan job per test binary (tools/ci/plan_lanes.py asan_jobs), each its own report
         self.assertEqual((report.lane_label("asan-core", []), report.lane_base("asan-core")), ("asan (core)", "asan"))
         self.assertEqual((report.lane_label("asan-editor", []), report.lane_base("asan-editor")), ("asan (editor)", "asan"))
-        self.assertEqual(report.lane_jobs("asan", [], "pull_request", asan_jobs=["core", "editor"]), ["asan-core", "asan-editor"])
-        self.assertEqual(report.lane_jobs("asan", [], "pull_request"), ["asan"])
+        self.assertEqual(report.lane_jobs("asan", [], asan_jobs=["core", "editor"]), ["asan-core", "asan-editor"])
+        self.assertEqual(report.lane_jobs("asan", []), ["asan"])
         # the nightly's ASan jobs are lanes of their own, not parts of asan
         for nightly in ("asan-gpu-slow", "htmlui-asan"):
             self.assertEqual((report.lane_label(nightly, []), report.lane_base(nightly)), (nightly, nightly))
