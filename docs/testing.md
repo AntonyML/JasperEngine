@@ -1123,6 +1123,11 @@ PR or in the queue, about 100 in the nightly).
 
   A job without `need` always frees. A job whose `need` is not met after the removal gets a warning
   in its log; raise its `need` when its reported use grows.
+- **Image** (`.github/actions/image`): pulls `ghcr.io/<owner>/jasperengine-<target>-build:<tag>`
+  anonymously (the packages are public) and logs `image: pulled <ref> in <n> s`. A tag the registry
+  does not have (a PR that changes `docker/`, until its merge runs `images.yml`) is built in the job
+  from the registry's layer cache and logs `is not in the registry; building it`, then
+  `image: built <ref> in <n> s`; a missing tag is asked for once, any other pull failure twice.
 
 ### Measured lane times
 
