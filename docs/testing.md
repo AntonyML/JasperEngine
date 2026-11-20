@@ -1149,6 +1149,17 @@ The Chrome for Testing headless shell in `docker/web.Dockerfile`, and `uv` and K
 harness's packages (`tools/mcp/requirements.txt`). Every workflow action is pinned by its full commit
 SHA, with its version in a comment.
 
+### Downloads retry, builds and tests do not
+
+A one-off network failure while fetching something does not fail a job: the images' apt
+(`docker/apt-retries.conf`), `wget` and `curl` retry with their own flags, `sdkmanager` in a loop;
+Gradle retries through `systemProp.org.gradle.internal.*` in
+`engine/workspaces/androidstudio/gradle.properties` (Gradle 9.6 ignores the keys without
+`systemProp.`), and the NDK is installed before Gradle with a retry; a workflow's download commands
+(`brew`, `choco`, `curl`, `gh release download`) run through `tools/ci/retry.sh`, and the Vulkan SDK
+action gets a second step when the first fails. Nothing else is retried: a flaky test gets `DISABLED_`
+and an issue.
+
 ## Known gaps
 
 What the suites do not cover today, and what closing each gap would take. Each needs money, a
