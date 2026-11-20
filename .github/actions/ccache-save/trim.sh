@@ -35,7 +35,9 @@ run_ccache() {
 }
 
 save=false
-if [[ "$EVENT" == schedule || ( "$EVENT" == push && "$REF" == refs/heads/main ) ]]; then
+# TEMPORARY (PR #g1 evidence, reverted before merge): this PR's runs save the newly cached lanes
+if [[ "$EVENT" == schedule || ( "$EVENT" == push && "$REF" == refs/heads/main ) \
+      || ( "$EVENT" == pull_request && "$LANE" =~ ^(unit-editor|asan-core|asan-editor|smoke)$ ) ]]; then
     # an object or manifest written since the restore (ccache rewrites its stats files on every hit)
     new="$(find "$DIR" -type f -newer "$JASPER_CCACHE_MARKER" ! -name stats ! -name '*.lock' \
         ! -name ccache.conf ! -path '*/tmp/*' -print -quit 2> /dev/null || true)"
