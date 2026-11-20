@@ -819,8 +819,15 @@ android)
     mkdir -p "$ROOT/$APK_DIR"
     # Gradle's output also goes to gradle.log: a deprecation in our Gradle files fails the build
     # (tools/ci/check_gradle_warnings.py; the template sets --warning-mode all)
+    # The NDK app/build.gradle pins, installed before Gradle when the SDK lacks it: the Android Gradle
+    # plugin's own download of it has no retry (main's run 44404218432 failed on a Premature EOF)
     run bash -euo pipefail -c "
         cd engine/workspaces/androidstudio
+        ndk=\$(sed -n 's/^ *ndkVersion = \"\\(.*\\)\"\$/\\1/p' app/build.gradle)
+        [[ -n \"\$ndk\" ]] || { echo 'no ndkVersion in app/build.gradle' >&2; exit 1; }
+        if [[ ! -f \"\$ANDROID_HOME/ndk/\$ndk/source.properties\" ]]; then
+            /src/tools/ci/retry.sh bash -c \"sdkmanager --install 'ndk;\$ndk' > /dev/null && test -f '\$ANDROID_HOME/ndk/\$ndk/source.properties'\"
+        fi
         env $PROJECT_ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache ./gradlew --no-daemon assembleDebug 2>&1 | tee /src/$APK_DIR/gradle.log
         cp app/build/outputs/apk/debug/*.apk /src/$APK_DIR/
         python3 /src/tools/ci/check_gradle_warnings.py /src/$APK_DIR/gradle.log
