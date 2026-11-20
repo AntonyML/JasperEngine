@@ -575,9 +575,11 @@ Recorded by the implementer (branch `feat/s06-jobs-memory`).
   entirely (`tools/check-cxx-subset.py`), so D9's gated `Arena::resource()` and
   `ScratchScope::resource()` are dropped: `ArenaAllocator<T>` serves std containers
   everywhere.
-- **`AssetIO.RetryHalfWrittenFile` is disabled** (#23): its writer thread sleeps 60 ms and races the
-  200 ms retry window, which a loaded CI runner misses. `EmptyFileIsRetriedThenFails` still covers
-  the window; the issue holds the deterministic rewrite.
+- **`AssetIO.RetryHalfWrittenFile` waits for the retry** (#23): a writer thread that slept 60 ms
+  raced the 200 ms retry window, which a loaded CI runner missed. Two test hooks on
+  `AssetIOService` make it deterministic: `setRetryHookForTesting` reports each failed attempt (the
+  writer waits for the first one) and `setRetryWindowForTesting` widens the window so a late writer
+  stays inside it. `EmptyFileIsRetriedThenFails` covers the real 200 ms window.
 - **Test target.** The S06 suites are part of S02's `jasperengine-core-tests`
   (`engine/tests/core/{jobs,memory,io,thread}`, `tools/build.sh unit-tests`, S02's TestMain).
   The resource pack the asset I/O suite reads is written at static initialisation, before the

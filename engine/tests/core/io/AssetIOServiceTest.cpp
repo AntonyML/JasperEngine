@@ -7,6 +7,7 @@
 
 #include "io/AssetIOService.h"
 #include "jobs/JobSystem.h"
+#include "jobs/detail/TimedWait.h"
 
 #include "JobsTestUtil.h"
 #include "TestPack.h"
@@ -15,6 +16,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -165,13 +167,34 @@ TEST_P(AssetIO, ReadFailureResolvesOnFailure){
     EXPECT_EQ(outcome.total(), 1) << "exactly one of onSubmitted/onFailure";
 }
 
-// DISABLED_: flaky (#23): the writer thread can be scheduled past the 200 ms retry window on a
-// loaded runner; it needs a retry hook to wait for the state, not 60 ms
-TEST_P(AssetIO, DISABLED_RetryHalfWrittenFile){
-    // the file appears (as a hot-reload rename does) inside the 200 ms retry window
+TEST_P(AssetIO, RetryHalfWrittenFile){
+    // the file appears (as a hot-reload rename does) after the read's first attempt failed: the
+    // writer waits for that attempt, and a wide window keeps a writer scheduled late inside it
     const std::string path = dir.file("late.txt");
+    struct Hooks {
+        ~Hooks(){
+            AssetIOService::setRetryHookForTesting(nullptr);
+            AssetIOService::setRetryWindowForTesting(0);
+        }
+    } hooks;
+    std::mutex mutex;
+    std::condition_variable retried;
+    bool failedOnce = false;
+    AssetIOService::setRetryWindowForTesting(60000);
+    AssetIOService::setRetryHookForTesting([&](const std::string& attempted){
+        if (attempted != path)
+            return;
+        std::lock_guard<std::mutex> lock(mutex);
+        failedOnce = true;
+        retried.notify_all();
+    });
     std::thread writer([&]{
-        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            // (a hang guard: the read retries until the file is there)
+            if (!jobs::detail::timedWait(retried, lock, std::chrono::seconds(30), [&]{ return failedOnce; }))
+                return;
+        }
         dir.write("late.tmp", "arrived");
         fs::rename(dir.file("late.tmp"), path);
     });
@@ -180,6 +203,7 @@ TEST_P(AssetIO, DISABLED_RetryHalfWrittenFile){
     Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return asString(bytes); });
     finish(task);
     writer.join();
+    ASSERT_EQ(task.status(), TaskStatus::Completed);
     EXPECT_EQ(task.get(), "arrived");
 }
 
