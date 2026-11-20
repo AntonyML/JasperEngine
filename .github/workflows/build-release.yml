@@ -82,6 +82,8 @@ jobs:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
       - uses: ./.github/actions/free-disk
+        with:
+          need: 65
       - uses: ./.github/actions/image
         id: image
         with:
@@ -123,6 +125,8 @@ jobs:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
       - uses: ./.github/actions/free-disk
+        with:
+          need: 25
       - uses: ./.github/actions/image
         id: image
         with:
@@ -164,6 +168,8 @@ jobs:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
       - uses: ./.github/actions/free-disk
+        with:
+          need: 75
       - uses: ./.github/actions/image
         id: image
         with:

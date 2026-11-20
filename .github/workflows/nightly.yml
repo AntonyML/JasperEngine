@@ -106,6 +106,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/free-disk
+        with:
+          need: 80
       - uses: ./.github/actions/image
         id: image
         with:
@@ -152,6 +154,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 30
       - uses: ./.github/actions/image
         id: image
         with:
@@ -191,6 +195,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # no need: it always frees, its trees and players took 87 GB of / (the nightly of 2026-11-20)
       - uses: ./.github/actions/free-disk
       - uses: ./.github/actions/image
         id: image
@@ -273,6 +278,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/free-disk
+        with:
+          need: 20
       - uses: ./.github/actions/image
         id: image
         with:
@@ -320,6 +327,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 40
       - uses: ./.github/actions/image
         id: image
         with:
@@ -363,6 +372,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 40
       - uses: ./.github/actions/image
         id: image
         with:
@@ -482,6 +493,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/free-disk
+        with:
+          need: 25
       - uses: ./.github/actions/image
         id: image
         with:
@@ -522,6 +535,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 40
       - uses: ./.github/actions/image
         id: image
         with:

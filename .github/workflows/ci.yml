@@ -50,7 +50,8 @@ defaults:
     shell: bash
 
 jobs:
-  # timeouts fit a cold build (an image change or an evicted ccache) on a 4-vCPU runner, not a warm one
+  # timeouts fit a cold build (an image change or an evicted ccache) on a 4-vCPU runner, not a warm one;
+  # free-disk's need is the lane's measured use of / plus a quarter and 10 GB (docs/testing.md "Job setup")
   # ------------------------------------------------------------- Planning ---
   changes:
     name: changes
@@ -207,6 +208,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 30
       - uses: ./.github/actions/image
         id: image
         with:
@@ -301,6 +304,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 60
       - uses: ./.github/actions/image
         id: image
         with:
@@ -474,6 +479,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 80
       - uses: ./.github/actions/image
         id: image
         with:
@@ -523,6 +530,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 30
       - uses: ./.github/actions/image
         id: image
         with:
@@ -603,6 +612,8 @@ jobs:
         with:
           fetch-depth: 2
       - uses: ./.github/actions/free-disk
+        with:
+          need: 20
       - uses: ./.github/actions/image
         with:
           target: linux
@@ -652,6 +663,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 55
       # the no-compiler image of the prebuilt builds, then the build image (the last sets JASPER_DOCKER_IMAGE)
       - uses: ./.github/actions/image
         with:
@@ -733,6 +746,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 35
       - uses: ./.github/actions/image
         id: image
         with:
@@ -807,6 +822,8 @@ jobs:
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/free-disk
+        with:
+          need: 65
       - uses: ./.github/actions/image
         id: image
         with:
