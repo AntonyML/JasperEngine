@@ -378,6 +378,9 @@ jobs:
       # the planned suites with their filter ('' = all), a part's shard of them; a push builds the tree
       # for the cache and the deps dumps (its second part only compiles its objects for the first)
       - name: jasperengine-${{ matrix.suite }}-tests
+        # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
+        # cancels it, and Check counts a cancelled lane red even while it is advisory
+        timeout-minutes: 240
         if: github.event_name != 'push' || env.UNIT_LEAD == 'true'
         env:
           SUITE: ${{ matrix.suite }}
@@ -490,7 +493,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_htmlui == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # it keeps no ccache (docs/testing.md "CI"): a cold build and the tests ran past 240
+    timeout-minutes: 330
     env:
       JASPER_CI_REPRO: JASPER_HTMLUI_PERF_SLACK=3 tools/build.sh htmlui-tests
     steps:
@@ -504,6 +508,9 @@ jobs:
           target: linux
       # the performance tests' targets on a shared 4-vCPU runner (compat/PerfFixtures.h)
       - name: jasperengine-htmlui-tests (OpenGL)
+        # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
+        # cancels it, and Check counts a cancelled lane red even while it is advisory
+        timeout-minutes: 300
         env:
           FILTER: ${{ needs.changes.outputs.htmlui_filter }}
           BUILD_ONLY: ${{ github.event_name == 'push' && 'RUN=0 ' || '' }}
@@ -579,6 +586,9 @@ jobs:
         run: mkdir -p build/linux && tar -C build/linux --zstd -xf build/editor-install.tar.zst
 
       - name: MCP shard ${{ matrix.shard }}
+        # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
+        # cancels it, and Check counts a cancelled lane red even while it is advisory
+        timeout-minutes: 160
         env:
           SHARD: ${{ matrix.shard }}
         run: tools/ci/logged.sh "mcp-shard-$SHARD" "tools/ci/mcp_shard.sh $SHARD build/ci-plan"
@@ -808,7 +818,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_windows == 'true'
     runs-on: windows-latest
-    timeout-minutes: 240
+    # a cold editor build (about 230 min, as after a cache-key change) plus the advisory editor-test
+    # step's own 75: past the job's limit GitHub cancels the job, and Check counts it red
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       # ccache where it shortens the lane (the 10 GB repository budget, docs/testing.md "CI"): the editor
