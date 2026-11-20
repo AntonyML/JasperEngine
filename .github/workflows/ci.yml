@@ -220,7 +220,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: linux
-          max-size: 1.6G
+          max-size: 0.9G
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: Build the editor and the engine sample project
@@ -315,7 +315,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: unit-${{ matrix.suite }}
-          max-size: ${{ matrix.suite == 'core' && '0.6G' || '1.5G' }}
+          max-size: ${{ matrix.suite == 'core' && '0.4G' || '0.85G' }}
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: CMake presets and option errors
@@ -486,7 +486,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: asan-${{ matrix.suite }}
-          max-size: ${{ matrix.suite == 'core' && '0.9G' || '1.8G' }}
+          max-size: ${{ matrix.suite == 'core' && '0.75G' || '1.6G' }}
           toolchain: ${{ steps.image.outputs.tag }}
       # GPU suites included: they run under Xvfb on Mesa (tools/sanitizers/lsan.supp); the unit lane's
       # filters; a push builds the tree for the cache
@@ -540,11 +540,11 @@ jobs:
         id: image
         with:
           target: linux
-      # a Release tree of 2,176 compiles: 1.66 GB of ccache, 28-36 min cold
+      # a Release tree of 2,176 compiles: 0.78 GB of ccache with line tables only, 28-36 min cold
       - uses: ./.github/actions/ccache-restore
         with:
           lane: htmlui
-          max-size: 1.7G
+          max-size: 0.8G
           toolchain: ${{ steps.image.outputs.tag }}
       # the performance tests' targets on a shared 4-vCPU runner (compat/PerfFixtures.h)
       - name: jasperengine-htmlui-tests (OpenGL)
@@ -676,11 +676,12 @@ jobs:
         id: image
         with:
           target: linux
-      # the player runtime and the two Compile builds (tools/smoke-test.sh mounts the same directory)
+      # the player runtime and the two Compile builds (tools/smoke-test.sh mounts the same directory): 1.9 GB,
+      # of which what is left of the budget keeps the last-used, the second Compile build (docs/testing.md "CI")
       - uses: ./.github/actions/ccache-restore
         with:
           lane: smoke
-          max-size: 1.5G
+          max-size: 0.7G
           toolchain: ${{ steps.image.outputs.tag }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -767,7 +768,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: web
-          max-size: 0.6G
+          max-size: 0.25G
           toolchain: ${{ steps.image.outputs.tag }}
 
       - name: Web presets and option errors
@@ -841,7 +842,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: android
-          max-size: 0.7G
+          max-size: 0.3G
           toolchain: ${{ steps.image.outputs.tag }}
       # Gradle's distribution and dependencies (tools/build.sh sets GRADLE_USER_HOME=build/.cache/gradle)
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -899,7 +900,7 @@ jobs:
       matrix:
         include:
           - part: editor
-            ccache: 1.0G
+            ccache: 0.95G
           - part: engine-glcore
             ccache: ''
           - part: engine-d3d11
@@ -1049,7 +1050,7 @@ jobs:
       - uses: ./.github/actions/ccache-restore
         with:
           lane: macos
-          max-size: 1.4G
+          max-size: 0.85G
 
       - name: Editor (arm64)
         run: tools/ci/macos.sh editor

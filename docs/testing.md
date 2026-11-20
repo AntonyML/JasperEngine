@@ -1037,27 +1037,33 @@ Windows jobs' builds and the core tests' run included.
   entries of linux, unit-core and Android, and the plan inputs, the coverage map and the Vulkan SDK
   were gone. A cap below the working set loses the start of the build, not all of it. The caches
   share GitHub's 10 GB per repository (the repository's `max_cache_size_gb`); working sets from each
-  lane's `ccache-save` (no precompiled headers), sizes as saved:
+  lane's `ccache-save` (no precompiled headers, line tables only: `JASPERENGINE_DEBUG_INFO=lines`,
+  "Build speed"), in decimal GB, from PR 131's run 44775260806 (sizes as saved where an entry was saved):
 
-  | Cache | Working set (GB) | Cap | Entry |
-  |---|---|---|---|
-  | linux | 1.5 (saved 1.44-1.46) | 1.6G | yes |
-  | unit-core | 1.34 | 1.4G | yes |
-  | macOS | 1.30-1.37 | 1.4G | yes |
-  | htmlui | 1.66 (2,176 compiles, Release) | 1.7G | yes |
-  | Windows editor | 0.91 | 1.0G | yes |
-  | Android | 0.63 | 0.7G | yes |
-  | web | 0.48 | 0.6G | yes |
-  | Gradle, Vulkan SDK, plan inputs, coverage map, MCP timings | 0.73, 0.21, under 0.01 each | | yes |
-  | Windows OpenGL | 1.4 | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
-  | unit-editor | 4.0 | | no |
-  | asan-core, asan-editor | 5.3 both (one job, PR 26) | | no: neither binary's fits what is left, so ASan does not run on push |
-  | smoke | 3.5 | | no |
+  | Cache | Working set (GB) | With full debug information | Cap | Entry |
+  |---|---|---|---|---|
+  | linux | 0.87 | 1.5 | 0.9G | yes |
+  | unit-core | 0.37 | 1.34 | 0.4G | yes |
+  | unit-editor | 0.77 | 4.0 | 0.85G | yes |
+  | asan-core | 0.72 | 2.1 | 0.75G | yes |
+  | asan-editor | 1.55 | 4.6 | 1.6G | yes |
+  | htmlui | 0.78 (2,176 compiles, Release) | 1.66 | 0.8G | yes |
+  | macOS | 0.84 | 1.30-1.37 | 0.85G | yes |
+  | Windows editor | 0.90 (MSVC: `/Z7` as before) | 0.91 | 0.95G | yes |
+  | Android | 0.27 | 0.63 | 0.3G | yes |
+  | web | 0.24 | 0.48 | 0.25G | yes |
+  | smoke | 1.93 (the player runtime and two Compile builds, which share nothing: each its own directory) | 3.5 | 0.7G | yes, the last-used part: the second Compile build |
+  | Gradle, Vulkan SDK, plan inputs, coverage map, MCP timings, uv | 0.73, 0.21, under 0.01 each | | | yes |
+  | Windows OpenGL | 1.4 | | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
 
-  At most 8.4 GB of caps plus 0.95 GB of the rest, 9.35 GB (8.8 GB at these working sets). A cache
-  with no entry builds cold, its job still reusing what an earlier step of the same job compiled, as
-  do Windows D3D11 and Vulkan. A lane that gives its entry up has its prefix in the `caches` job's
-  second list, so its last entry goes at once instead of holding the budget for 7 days.
+  At most 8.35 GB of caps plus 0.96 GB of the rest, 9.31 GB (8.97 GB at these working sets, smoke
+  cut to its cap). Every lane but smoke has a cap just above its working set; smoke, last in line
+  (the slowest cold lanes that run on every PR came first: unit-editor, then ASan), takes what is
+  left, and a cap below the working set loses its oldest-used part, here the player runtime and the
+  first Compile build. A cache with no entry builds cold, its job still reusing what an earlier step
+  of the same job compiled, as do Windows D3D11 and Vulkan. A lane that gives its entry up has its
+  prefix in the `caches` job's second list, so its last entry goes at once instead of holding the
+  budget for 7 days.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### The nightly and releases
