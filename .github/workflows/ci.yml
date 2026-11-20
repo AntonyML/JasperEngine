@@ -385,6 +385,9 @@ jobs:
       # the planned suites with their filter ('' = all), a part's shard of them; a push builds the tree
       # for the cache and the deps dumps (its second part only compiles its objects for the first)
       - name: jasperengine-${{ matrix.suite }}-tests
+        # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
+        # cancels it, and Check counts a cancelled lane red even while it is advisory
+        timeout-minutes: 240
         if: github.event_name != 'push' || env.UNIT_LEAD == 'true'
         env:
           SUITE: ${{ matrix.suite }}
@@ -610,6 +613,9 @@ jobs:
         run: mkdir -p build/linux && tar -C build/linux --zstd -xf build/editor-install.tar.zst
 
       - name: MCP shard ${{ matrix.shard }}
+        # under the job's limit: a step past its own timeout fails (advisory), where the job's timeout
+        # cancels it, and Check counts a cancelled lane red even while it is advisory
+        timeout-minutes: 160
         env:
           SHARD: ${{ matrix.shard }}
         run: tools/ci/logged.sh "mcp-shard-$SHARD" "tools/ci/mcp_shard.sh $SHARD build/ci-plan"
