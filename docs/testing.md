@@ -1009,9 +1009,9 @@ Windows jobs' builds and the core tests' run included.
 | `lint` | unless every path is one nothing reads | same | no | yes |
 | platform builds | when anything that builds changed | yes | yes, to warm the caches | yes |
 | `unit`, `htmlui` | the suites the plan selects | all, unfiltered | build only (the caches, the deps dumps) | all |
-| `asan` | the unit lane's suites | all, unfiltered | no (it keeps no cache entry) | all |
+| `asan` | the unit lane's suites | all, unfiltered | build only (each binary's cache) | all |
 | `mcp` | the planned CI-suite files | the planned files, over the group's diff against `main` | no | the whole CI suite |
-| `smoke` | when a game-building path changed | yes | no | yes |
+| `smoke` | when a game-building path changed | yes | when a game-building path changed (its cache) | yes |
 
 - **Nothing reads it**: a change only under `docs/specs/`, `docs/superpowers/`, `docs/engine-gaps/`,
   `docs/openengine-analysis/`, `docs/test-cleanup/`, `.claude/`, a root `*-LEDGER.md` or `README.md`
