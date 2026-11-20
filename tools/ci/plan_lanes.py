@@ -43,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -336,6 +337,112 @@ def _decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_
     return result
 
 
+# ---------------------------------------------------------------------------------------- selection
+
+SELECTION_LISTED = 40   # reasons listed per test lane in the job summary (all are in lanes.json)
+
+
+def _widening(fallbacks: list[str], words: tuple[str, ...], default: str) -> str:
+    hits = [f for f in fallbacks if any(w in f for w in words)]
+    return "; ".join(hits) or default
+
+
+def selection(event: str, plan: dict | None, result: dict, ci: list[str]) -> dict:
+    """What each test lane runs and why: per unit binary and for MCP, its mode (all, suites or files,
+    none) and the reason of each selected suite or file by kind (check_changed.REASON_KINDS); a whole
+    suite is `full` (the event runs everything) or a `fallback` (a widening, said why)."""
+    full = event in ("merge_group", "full", "nightly", "push")
+    fallbacks = result["fallbacks"]
+    lanes = result["lanes"]
+    reasons = (plan or {}).get("unit_reasons", {})
+    unit = {}
+    for binary in ("core", "editor", "htmlui"):
+        if binary == "htmlui":
+            run, flt, lane_why = lanes["htmlui"]["run"], result["htmlui_filter"], lanes["htmlui"]["why"]
+            queue_full = event in ("full", "nightly", "merge_group") or "every HTML UI test" in lane_why
+        else:
+            run, flt, lane_why = result["unit_run"][binary], result["unit_filter"][binary], lanes["unit"]["why"]
+            queue_full = full
+        if not run:
+            unit[binary] = {"mode": "none", "kind": "", "why": lane_why if not lanes["unit"]["run"] or binary == "htmlui"
+                            else "no unit test sees the change", "suites": []}
+        elif not flt:
+            unit[binary] = {"mode": "all", "kind": "full" if queue_full and event != "pull_request" else "fallback",
+                            "why": lane_why if full else _widening(fallbacks, ("unit test", "HTML UI test", f"{binary} filter",
+                                                                               ".github/", "no plan"), lane_why),
+                            "suites": []}
+        else:
+            names = (plan or {}).get("unit", {}).get(binary, []) if isinstance((plan or {}).get("unit"), dict) else []
+            known = reasons.get(binary, {})
+            unit[binary] = {"mode": "suites", "kind": "", "why": lane_why, "suites": [
+                {"suite": n, "kind": known.get(n, ["dependency", ""])[0], "why": known.get(n, ["", "sees the change"])[1]}
+                for n in names]}
+    mcp = result["mcp"]
+    picked = {f.rsplit("/", 1)[-1] for f in mcp["files"]}
+    if mcp["mode"] in ("ci", "nightly"):
+        files_sel = {"mode": mcp["mode"], "kind": "full" if event in ("full", "nightly") else "fallback",
+                     "why": lanes["mcp"]["why"] if event in ("full", "nightly") else
+                     _widening(fallbacks, ("MCP", "CI suite", "map", ".github/", "no plan"), lanes["mcp"]["why"]),
+                     "files": []}
+    else:
+        listed = plan.get("mcp_selected") or (plan.get("mcp") if isinstance(plan.get("mcp"), list) else []) if plan else []
+        files_sel = {"mode": mcp["mode"], "kind": "", "why": lanes["mcp"]["why"], "files": [
+            {"file": e["file"], "kind": e.get("kind", "dependency"), "why": e.get("reason", "")}
+            for e in listed if e["file"] in picked]}
+    files_sel["of"] = len(ci)
+    return {"unit": unit, "mcp": files_sel}
+
+
+def _kinds(entries: list[dict]) -> str:
+    counts: dict[str, int] = {}
+    for e in entries:
+        counts[e["kind"]] = counts.get(e["kind"], 0) + 1
+    return ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def selection_markdown(sel: dict, fallbacks: list[str], manifest: dict) -> str:
+    """The job summary's account of the selection: a row per test lane, then each reason."""
+    lines = ["### Test selection", "", "| Lane | Selected | Why |", "|---|---|---|"]
+    titles = {"core": "unit (core)", "editor": "unit (editor)", "htmlui": "HTML UI"}
+    for binary, entry in sel["unit"].items():
+        if entry["mode"] == "suites":
+            picked, why = f"{len(entry['suites'])} suites", _kinds(entry["suites"])
+        else:
+            picked, why = entry["mode"], (f"{entry['kind']}: {entry['why']}" if entry["kind"] else entry["why"])
+        lines.append(f"| {titles[binary]} | {picked} | {why.replace('|', '/')} |")
+    m = sel["mcp"]
+    if m["mode"] in ("ci", "nightly"):
+        picked, why = f"all {m['of']} files", f"{m['kind']}: {m['why']}"
+    elif m["mode"] == "planned":
+        picked, why = f"{len(m['files'])} of {m['of']} files", _kinds(m["files"])
+    else:
+        picked, why = "none", m["why"]
+    if m.get("tests"):
+        picked += f" ({m['tests']} tests)"
+    lines.append(f"| MCP | {picked} | {why.replace('|', '/')} |")
+    entries = [f"- `{e['file']}` ({e['kind']}): {e['why']}" for e in m["files"]]
+    for binary, entry in sel["unit"].items():
+        entries += [f"- `{e['suite']}` ({titles[binary]}, {e['kind']}): {e['why']}" for e in entry["suites"]]
+    if entries:
+        lines += ["", f"<details><summary>Why each was selected ({len(entries)})</summary>", ""]
+        lines += entries[:SELECTION_LISTED]
+        if len(entries) > SELECTION_LISTED:
+            lines.append(f"- ... and {len(entries) - SELECTION_LISTED} more (the `plan` artifact's lanes.json lists all)")
+        lines += ["", "</details>"]
+    if fallbacks:
+        lines += ["", "Widened: " + "; ".join(fallbacks)]
+    inputs = []
+    for name, label in (("coverage-map", "coverage map"), ("deps/core-tests", "core deps dump"),
+                        ("deps/editor-tests", "editor deps dump"), ("deps/htmlui-tests", "HTML UI deps dump")):
+        made = manifest.get(name)
+        if made:
+            inputs.append(f"{label} of {str(made.get('commit', '?'))[:12]} (run {made.get('run', '?')}, "
+                          f"{(time.time() - float(made.get('created', 0))) / 86400:.1f} days old)")
+    if manifest:
+        lines += ["", "Plan inputs (ci-plan-inputs): " + ("; ".join(inputs) or "none")]
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------------------------------- output
 
 def unit_jobs(unit_run: dict) -> list[dict]:
@@ -387,6 +494,20 @@ def github_output(doc: dict, unit_run: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def write_selection(doc: dict, event: str, plan: dict | None, result: dict, ci: list[str], tests: list[str] | None,
+                    manifest_path: Path | None, out: Path) -> None:
+    """lanes.json's selection, and <out>/selection.md for the job summary."""
+    sel = selection(event, plan, result, ci)
+    if tests and doc["mcp"]["shards"]:
+        sel["mcp"]["tests"] = len(tests)
+    doc["selection"] = sel
+    try:
+        manifest = json.loads(manifest_path.read_text()) if manifest_path else {}
+    except (OSError, ValueError):
+        manifest = {}
+    (out / "selection.md").write_text(selection_markdown(sel, result["fallbacks"], manifest))
+
+
 def head_checkout(head: str) -> tuple[Path, Path | None, str]:
     """The checkout of head: this one when it is at head, else a scratch worktree (removed after)."""
     here = resolve(cc.ROOT, "HEAD")
@@ -412,6 +533,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--coverage-map", type=Path, help="the nightly's coverage map (none: the CI suite for C++ changes)")
     ap.add_argument("--test-seconds", type=Path, help="per-test seconds of earlier runs (mcp-test-seconds.json)")
     ap.add_argument("--github-output", type=Path, help="append the job outputs here ($GITHUB_OUTPUT)")
+    ap.add_argument("--inputs-manifest", type=Path, help="the plan inputs' manifest.json (tools/ci/plan_inputs.py fetch)")
     args = ap.parse_args(argv)
 
     out = args.out_dir.resolve()
@@ -427,6 +549,7 @@ def main(argv: list[str]) -> int:
         result = decide(args.event, plan, error, ci, left_out, nightly_out)
         shards: list[str] = []
         notes: list[str] = []
+        tests: list[str] | None = None
         if result["mcp"]["mode"] != "none":
             names = [f.rsplit("/", 1)[-1] for f in result["mcp"]["files"]]
             tests, why = list_tests(root, names)
@@ -449,6 +572,7 @@ def main(argv: list[str]) -> int:
                "files": plan["files"] if plan else None,
                "self_tests": plan["self_tests"] if plan else [],
                "checks": {"modules_off": plan["modules_off"] if plan else "", "navigation_off": bool(plan and plan["navigation_off"])}}
+        write_selection(doc, args.event, plan, result, ci, tests, args.inputs_manifest, out)
         tmp = out / "lanes.json.tmp"
         tmp.write_text(json.dumps(doc, indent=1) + "\n")
         os.replace(tmp, out / "lanes.json")

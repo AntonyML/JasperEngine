@@ -128,7 +128,14 @@ jobs:
           [[ -d build/ci-inputs/deps ]] && args+=(--deps-from build/ci-inputs/deps)
           [[ -f build/ci-inputs/coverage-map.json ]] && args+=(--coverage-map build/ci-inputs/coverage-map.json)
           [[ -f build/ci-inputs/mcp-test-seconds.json ]] && args+=(--test-seconds build/ci-inputs/mcp-test-seconds.json)
+          [[ -f build/ci-inputs/manifest.json ]] && args+=(--inputs-manifest build/ci-inputs/manifest.json)
           tools/ci/logged.sh plan "python3 tools/ci/plan_lanes.py $(printf '%q ' "${args[@]}")"
+
+      # what each test lane runs and why (owner, dependency, policy, smoke; a whole suite: full or fallback)
+      - name: Test selection
+        if: always()
+        run: |
+          if [[ -f build/ci-plan/selection.md ]]; then cat build/ci-plan/selection.md >> "$GITHUB_STEP_SUMMARY"; fi
 
       # lanes.json at the artifact's root
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

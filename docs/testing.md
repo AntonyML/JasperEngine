@@ -1073,6 +1073,22 @@ none), and each missing input widened its lane to everything. `tools/ci/plan_inp
 - Freshness: the map is remade every night and a map older than 14 days or 400 commits still widens
   (`MAP_MAX_AGE_DAYS`, `MAP_MAX_COMMITS`); the deps dumps on every push to `main`.
 
+### Why a test runs
+
+The plan records a reason for every suite and MCP file it selects (`check_changed.REASON_KINDS`), in
+`check-changed.json` (`unit_reasons`, `mcp_selected[].kind`) and `lanes.json` (`selection`), and the
+`changes` job prints it in its summary (`selection.md`: a row per test lane, the first 40 reasons,
+what widened the plan and the plan inputs' commits and ages):
+
+| Kind | A suite or file runs because |
+|---|---|
+| `owner` | its own source changed (a test unit, an MCP test file) |
+| `dependency` | it includes what changed (Ninja's deps), or runs, calls or loads it (the coverage map, a tool's name, a path) |
+| `policy` | a rule watches the changed path: a shader's `*Gpu` suites, the compile and game-build files, the save guard, the agent-docs and guide checks |
+| `smoke` | it is one of the 10 quickest files that run code nearly every editor runs |
+| `full` | the event runs the whole suite (merge queue units, a full run, the nightly) |
+| `fallback` | a widening ran the whole suite, and says which (no map, a stale map, a new source, CMake, a test's data, `.github/`) |
+
 ### The nightly and releases
 
 - **Nightly** (`nightly.yml`, 03:17 UTC, or dispatched): the slow configurations (HTML UI on Vulkan

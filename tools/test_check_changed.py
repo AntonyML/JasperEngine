@@ -246,6 +246,28 @@ class Units(unittest.TestCase):
     def test_filter(self):
         self.assertEqual(cc.suite_filter(["Foo"]), "Foo.*:*/Foo.*:Foo/*.*")
 
+    def test_each_suite_says_why_it_runs(self):
+        # (the plan's reasons: the test unit that changed, or that includes what changed)
+        why = {}
+        cc.select_units(["engine/core/Foo.cpp", "engine/tests/core/BarTest.cpp"], self.deps, SOURCES.__getitem__, why)
+        self.assertEqual(why, {"engine/tests/core/FooTest.cpp": "engine/core/Foo.h",
+                               "engine/tests/core/BarTest.cpp": "engine/tests/core/BarTest.cpp"})
+        p = cc.Plan()
+        files = ["engine/core/Foo.cpp", "engine/tests/core/BarTest.cpp"]
+        cc.plan_builds(files, p)
+        tmp = Path(tempfile.mkdtemp(prefix="cc-why-"))
+        try:
+            cc.use_root(tmp)
+            for unit, text in SOURCES.items():
+                (tmp / unit).parent.mkdir(parents=True, exist_ok=True)
+                (tmp / unit).write_text(text)
+            cc.plan_units(cc.Changes("b", "x", files), p, DEPS, DEPS)
+        finally:
+            cc.use_root(REAL_ROOT)
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertEqual(p.unit_reasons["core"]["Foo"], ("dependency", "engine/tests/core/FooTest.cpp includes engine/core/Foo.h"))
+        self.assertEqual(p.unit_reasons["core"]["Bar"], ("owner", "engine/tests/core/BarTest.cpp changed"))
+
     def test_cmake_or_no_database_runs_every_unit_test(self):
         for files, deps in ((["engine/CMakeLists.txt"], (DEPS, DEPS)), (["engine/core/Foo.cpp"], (None, DEPS))):
             p = cc.Plan()
@@ -378,6 +400,21 @@ class Mcp(unittest.TestCase):
         self.assertIn("commits behind", cc.map_staleness({"created": time.time(), "commit": "x"}, time.time(),
                                                          lambda c: cc.MAP_MAX_COMMITS + 1))
         self.assertIsNone(cc.map_staleness({"created": time.time(), "commit": "x"}, time.time(), lambda c: 3))
+
+    def test_each_file_says_what_kind_of_reason_selected_it(self):
+        # owner (the test changed), dependency (it runs, calls or loads what changed), policy (a rule
+        # watches the path), smoke (a quick sample of code nearly every editor runs)
+        p = self.plan(["tools/mcp/tests/test_other.py", "editor/App.cpp", "AGENTS.md", "editor/Exporter.cpp"])
+        self.assertEqual(p.mcp_kinds, {"test_other.py": "owner", "test_render.py": "dependency",
+                                       "test_agent_docs.py": "policy", "test_build.py": "policy"})
+        tests = [f"test_{c}.py" for c in "abcdefghijklmnopqrst"]
+        cmap = mapfile({"editor/A.cpp": ("blob", [(1, 9, list(range(20)))])}, tests=tests)
+        q = cc.Plan()
+        cc.plan_mcp(cc.Changes("b", "x", ["editor/A.cpp"]), q, cmap, {t: "x\n" for t in tests}, None)
+        self.assertEqual(set(q.mcp_kinds.values()), {"smoke"})
+        doc = cc.plan_document(cc.Changes("b", "x", ["editor/App.cpp"]), p, "map", None)
+        self.assertIn({"file": "test_render.py", "reason": p.mcp_reasons["test_render.py"], "kind": "dependency"},
+                      doc["mcp_selected"])
 
     def test_test_files_tools_fixtures(self):
         self.assertEqual(self.plan(["tools/mcp/tests/test_other.py"]).mcp_files, ["test_other.py"])

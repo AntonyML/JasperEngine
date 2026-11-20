@@ -234,6 +234,55 @@ def sh(cwd: Path, *args: str) -> str:
     return subprocess.run(list(args), cwd=str(cwd), check=True, capture_output=True, text=True).stdout
 
 
+class Selection(unittest.TestCase):
+    """lanes.json's selection: what each test lane runs, and why (the job summary prints it)."""
+
+    def test_reasons_of_a_planned_change(self):
+        p = plan(["engine/core/Foo.cpp", "tools/mcp/tests/test_b.py"], builds=("linux", "unit-tests"),
+                 unit={"core": ["Foo", "FooGpu"], "editor": [], "htmlui": []}, mcp=["test_a.py", "test_b.py", "test_long.py"])
+        p["unit_reasons"] = {"core": {"Foo": ["dependency", "engine/tests/core/FooTest.cpp includes engine/core/Foo.h"],
+                                      "FooGpu": ["policy", "a shader changed: the suites that draw (*Gpu)"]},
+                             "editor": {}, "htmlui": {}}
+        p["mcp"] = [{"file": "test_a.py", "reason": "runs engine/core/Foo.cpp (the changed functions)", "kind": "dependency"},
+                    {"file": "test_b.py", "reason": "the test file changed", "kind": "owner"},
+                    {"file": "test_long.py", "reason": "runs engine/core/Foo.cpp", "kind": "dependency"}]
+        r = decide("pull_request", p)
+        sel = pl.selection("pull_request", p, r, CI)
+        self.assertEqual(sel["unit"]["core"]["mode"], "suites")
+        self.assertEqual(sel["unit"]["core"]["suites"], [
+            {"suite": "Foo", "kind": "dependency", "why": "engine/tests/core/FooTest.cpp includes engine/core/Foo.h"},
+            {"suite": "FooGpu", "kind": "policy", "why": "a shader changed: the suites that draw (*Gpu)"}])
+        self.assertEqual(sel["unit"]["editor"], {"mode": "none", "kind": "", "why": "no unit test sees the change", "suites": []})
+        # MCP: the CI suite's planned files only, each with its reason
+        self.assertEqual(sel["mcp"]["mode"], "planned")
+        self.assertEqual(sel["mcp"]["files"], [
+            {"file": "test_a.py", "kind": "dependency", "why": "runs engine/core/Foo.cpp (the changed functions)"},
+            {"file": "test_b.py", "kind": "owner", "why": "the test file changed"}])
+        self.assertEqual(sel["mcp"]["of"], 3)
+        md = pl.selection_markdown(sel, r["fallbacks"], {})
+        self.assertIn("| unit (core) | 2 suites |", md)
+        self.assertIn("1 dependency, 1 policy", md)
+        self.assertIn("`test_b.py` (owner): the test file changed", md)
+
+    def test_a_widening_says_it_is_a_fallback_and_why(self):
+        p = plan(["engine/CMakeLists.txt"], unit="all", mcp="ci", fallbacks=["no coverage map: the CI suite for the C++ change"])
+        r = decide("pull_request", p)
+        sel = pl.selection("pull_request", p, r, CI)
+        self.assertEqual((sel["unit"]["core"]["mode"], sel["unit"]["core"]["kind"]), ("all", "fallback"))
+        self.assertEqual((sel["mcp"]["mode"], sel["mcp"]["kind"]), ("ci", "fallback"))
+        self.assertIn("no coverage map", sel["mcp"]["why"])
+        md = pl.selection_markdown(sel, r["fallbacks"], {"coverage-map": {"commit": "abcdef1234567", "run": "9", "created": 0}})
+        self.assertIn("| MCP | all 3 files |", md)
+        self.assertIn("fallback: no coverage map", md)
+        self.assertIn("coverage map of abcdef123456 (run 9", md)
+        # the merge queue and a full run: the whole suites by rule, not by a fallback
+        r = decide("merge_group", plan(["engine/core/Foo.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": []}))
+        sel = pl.selection("merge_group", plan(["engine/core/Foo.cpp"]), r, CI)
+        self.assertEqual((sel["unit"]["editor"]["mode"], sel["unit"]["editor"]["kind"]), ("all", "full"))
+        sel = pl.selection("full", None, decide("full", None), CI)
+        self.assertEqual((sel["mcp"]["mode"], sel["mcp"]["kind"]), ("ci", "full"))
+
+
 class Shards(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="plan-lanes-shards-"))
@@ -329,6 +378,10 @@ class Runs(unittest.TestCase):
         self.assertEqual(sorted(t for c in shard["chunks"] for t in c["tests"]),
                          ["test_made_0", "test_made_1", "test_one", "test_two"])
         self.assertTrue(doc["lanes"]["linux"]["run"] and doc["lanes"]["windows"]["run"])
+        # the reasons, in lanes.json and as the job summary's Markdown
+        self.assertEqual(doc["selection"]["mcp"]["files"], [{"file": "test_a.py", "kind": "owner", "why": "the test file changed"}])
+        self.assertEqual(doc["selection"]["mcp"]["tests"], 4)
+        self.assertIn("`test_a.py` (owner): the test file changed", (self.tmp / "out/selection.md").read_text())
 
     def test_an_older_head_is_planned_in_a_worktree_of_its_own(self):
         old = self.commit("engine/core/Foo.cpp", "int foo = 1;\n")
