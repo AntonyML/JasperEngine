@@ -385,9 +385,14 @@ jobs:
         env:
           SUITE: ${{ matrix.suite }}
           SHARD: ${{ matrix.part }}
-          FILTER: ${{ matrix.suite == 'core' && needs.changes.outputs.unit_filter_core || needs.changes.outputs.unit_filter_editor }}
+          # both, chosen below: `suite == 'core' && core || editor` yields the editor's filter whenever
+          # core's is empty, which means "every core test"
+          FILTER_CORE: ${{ needs.changes.outputs.unit_filter_core }}
+          FILTER_EDITOR: ${{ needs.changes.outputs.unit_filter_editor }}
           BUILD_ONLY: ${{ github.event_name == 'push' && 'RUN=0 ' || '' }}
         run: |
+          filter_var="FILTER_${SUITE^^}"
+          FILTER="${!filter_var}"
           args=""
           [[ -n "$FILTER" ]] && args="UNIT_TEST_ARGS=$(printf %q "--gtest_filter=$FILTER") "
           [[ -n "$SHARD" ]] && args="UNIT_SHARD=$SHARD $args"
