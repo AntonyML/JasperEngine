@@ -182,13 +182,33 @@ class Rules(unittest.TestCase):
         self.assertIn("no ccache entry", r["lanes"]["asan"]["why"])
         self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
 
-    def test_push_runs_what_the_queue_left_out(self):
-        # the merge queue does not run the advisory lanes, so the push to main does: every merged change
-        # still gets their results, as the queue would have run them
+    def test_push_builds_and_leaves_the_advisory_tests_to_the_advisory_run(self):
+        # the advisory tests take 4.5 h (ASan): in the push run, every push held about 14 Linux jobs that
+        # long and bursts overlapped (3 runs at once on 2026-11-20); the advisory run the push dispatches
+        # takes them one at a time, the newest waiting
+        p = plan(["editor/window/InspectorX.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": ["Css"]},
+                 mcp=["test_a.py"])
+        r = decide("push", p, advisory=ADVISORY)
+        self.assertEqual(runs(r), {"changes", "unit", "htmlui", *pl.PLATFORM_LANES} - {"ios"})
+        self.assertEqual((r["build_only"], r["advisory_off"]), (["unit", "htmlui", "windows-editor-tests"], []))
+        self.assertEqual(r["mcp"]["mode"], "none")
+        self.assertIn("build only", r["lanes"]["unit"]["why"])
+        self.assertTrue(r["dispatch_advisory"])
+        # no advisory test lane (ADVISORY_LANES emptied, or naming only lint), nothing that builds, or a
+        # newer push supersedes it: no advisory run
+        for q, adv, sup in ((p, (), None), (p, ("lint", "linux"), None), (plan(["README.md"], builds=()), ADVISORY, None),
+                            (p, ADVISORY, ("c" * 40, "engine/a.cpp"))):
+            self.assertFalse(decide("push", q, advisory=adv, superseded_by=sup)["dispatch_advisory"], (q["files"], adv, sup))
+        self.assertTrue(decide("push", p, advisory=("windows-editor-tests",))["dispatch_advisory"])
+        for event in ("pull_request", "merge_group", "full", "advisory"):
+            self.assertFalse(decide(event, p, advisory=ADVISORY)["dispatch_advisory"], event)
+
+    def test_the_advisory_run_runs_what_the_queue_left_out(self):
         p = plan(["editor/window/InspectorX.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": ["Css"]},
                  mcp=["test_a.py", "test_fixture.py"])
-        r = decide("push", p, advisory=ADVISORY)
-        self.assertEqual(runs(r), set(pl.LANES) - {"lint", "ios"})
+        r = decide("advisory", p, advisory=ADVISORY)
+        # linux: the editor install the mcp and smoke lanes run; windows: the editor leg's test run
+        self.assertEqual(runs(r), {"changes", "linux", "unit", "asan", "htmlui", "mcp", "smoke", "windows"})
         self.assertEqual((r["build_only"], r["advisory_off"]), ([], []))
         self.assertEqual((r["unit_run"], r["unit_filter"], r["htmlui_filter"]),
                          ({"core": True, "editor": True}, {"core": "", "editor": ""}, ""))
@@ -196,16 +216,37 @@ class Rules(unittest.TestCase):
         self.assertEqual(r["mcp"]["files"], ["tools/mcp/tests/test_a.py"])
         for name in ("unit", "asan", "htmlui", "mcp", "smoke"):
             self.assertIn("ADVISORY_LANES", r["lanes"][name]["why"], name)
-        # (smoke: every game export, as in the queue, not only the cache warming)
         self.assertIn("every game export", r["lanes"]["smoke"]["why"])
-        # it follows the list: a lane taken off it is the queue's again, and the push builds only
-        r = decide("push", p, advisory=("mcp",))
-        self.assertEqual(runs(r), {"changes", "unit", "htmlui", "mcp", *pl.PLATFORM_LANES} - {"ios"})
-        self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
-        self.assertIn("build only", r["lanes"]["unit"]["why"])
-        # a push nothing reads runs nothing
-        r = decide("push", plan(["README.md"], builds=()), advisory=ADVISORY)
-        self.assertEqual((runs(r), r["build_only"]), ({"changes"}, []))
+        self.assertIn("windows-editor-tests", r["lanes"]["windows"]["why"])
+        self.assertIn("editor install", r["lanes"]["linux"]["why"])
+        for name in ("lint", "web", "android", "macos", "ios"):
+            self.assertIn("the merge queue ran it", r["lanes"][name]["why"], name)
+        # it follows the list
+        for adv, want in ((("mcp",), {"changes", "linux", "mcp"}), (("unit",), {"changes", "unit"}),
+                          (("windows-editor-tests",), {"changes", "windows"}), ((), {"changes"})):
+            r = decide("advisory", p, advisory=adv)
+            self.assertEqual(runs(r), want, adv)
+            if "mcp" not in adv:
+                self.assertEqual(r["mcp"]["mode"], "none", adv)
+        # nothing that builds changed since the last advisory run: nothing runs
+        self.assertEqual(runs(decide("advisory", plan(["README.md"], builds=()), advisory=ADVISORY)), {"changes"})
+        # no plan (no earlier advisory run to diff against): every advisory lane, the whole MCP CI suite
+        r = decide("advisory", None, "no earlier advisory run of main finished", advisory=ADVISORY)
+        self.assertEqual(runs(r), {"changes", "linux", "unit", "asan", "htmlui", "mcp", "smoke", "windows"})
+        self.assertEqual(r["mcp"]["mode"], "ci")
+        self.assertTrue(any("no earlier advisory run" in f for f in r["fallbacks"]), r["fallbacks"])
+
+    def test_the_previous_run_of_a_stage(self):
+        def run(i, conclusion="success", title="CI", status="completed"):
+            return {"databaseId": i, "headSha": f"{i:x}" * 40 if i < 16 else "e" * 40, "status": status,
+                    "conclusion": conclusion, "displayTitle": title, "createdAt": f"2026-11-20T{i:02d}:00:00Z"}
+        adv = pl.ADVISORY_TITLE + "main at " + "0" * 40
+        runs_ = [run(9, "", adv, "in_progress"), run(8, "cancelled", adv), run(7), run(6, "failure", adv), run(5, "success", adv),
+                 {"databaseId": 4, "headSha": "not a sha", "status": "completed", "conclusion": "success"}, "junk"]
+        self.assertEqual(pl.previous_run(runs_, 9), ("7" * 40, 7))
+        self.assertEqual(pl.previous_run(runs_, 9, title=pl.ADVISORY_TITLE), ("6" * 40, 6))
+        self.assertIsNone(pl.previous_run(runs_[:2], 9))
+        self.assertIsNone(pl.previous_run({"not": "a list"}, 9))
 
     def test_a_newer_push_that_builds_supersedes_this_one(self):
         # pushes to main come one per merge-queue group, some minutes apart (2026-11-15..20: 62 s, 3 and
@@ -262,7 +303,9 @@ class Rules(unittest.TestCase):
         keys = [line.split("=", 1)[0] for line in lines]
         self.assertEqual(keys, ["full", *[f"run_{n}" for n in pl.LANES], "unit_filter_core", "unit_filter_editor",
                                 "unit_run_core", "unit_run_editor", "unit_jobs", "asan_jobs", "htmlui_filter", "mcp_shards",
-                                "build_only"])
+                                "build_only", "dispatch_advisory"])
+        self.assertIn("dispatch_advisory=false", lines)
+        self.assertIn("dispatch_advisory=true", pl.github_output(dict(doc, dispatch_advisory=True), r["unit_run"]).splitlines())
         self.assertIn("unit_filter_core=Foo.*:*/Foo.*:Foo/*.*", lines)
         self.assertIn('mcp_shards=["1","2"]', lines)
         self.assertIn("unit_run_editor=false", lines)
@@ -515,6 +558,39 @@ class Runs(unittest.TestCase):
             code, doc, out = self.run_main("--event", "push", "--base", skipped, "--head", head,
                                            "--out-dir", str(self.tmp / "out"), "--previous-runs", str(runs_json), "--run-id", "30")
             self.assertEqual((code, doc["base"], doc["files"]), (0, skipped, ["docs/specs/S1.md"]), (text, out))
+
+    def test_the_advisory_run_is_planned_against_the_last_advisory_run_that_finished(self):
+        tested = self.commit("engine/core/Foo.cpp", "int foo = 5;\n")
+        head = self.commit("tools/mcp/tests/test_a.py", TEST_FILE.format(extra="# changed"))
+        title = pl.ADVISORY_TITLE + "main at "
+        runs_json = self.tmp / "runs.json"
+
+        def write(*entries):
+            runs_json.write_text(json.dumps([{"databaseId": i, "headSha": sha, "status": status, "conclusion": conclusion,
+                                              "displayTitle": t, "createdAt": f"2026-11-20T{i:02d}:00:00Z"}
+                                             for i, sha, status, conclusion, t in entries]))
+
+        def run_advisory():
+            return self.run_main("--event", "advisory", "--base", head, "--head", head, "--out-dir", str(self.tmp / "out"),
+                                 "--advisory", " ".join(ADVISORY), "--previous-runs", str(runs_json), "--run-id", "20")
+        # (a full dispatch is no advisory run; a cancelled one never ran or stopped)
+        write((20, head, "in_progress", "", title + head), (19, self.base, "completed", "success", "CI"),
+              (18, self.base, "completed", "cancelled", title + self.base), (17, tested, "completed", "failure", title + tested))
+        code, doc, out = run_advisory()
+        self.assertEqual((code, doc["event"], doc["base"], doc["head"]), (0, "advisory", tested, head), out)
+        self.assertEqual(doc["files"], ["tools/mcp/tests/test_a.py"])
+        self.assertEqual((doc["mcp"]["files"], doc["mcp"]["shards"]), (["tools/mcp/tests/test_a.py"], ["1"]), out)
+        self.assertTrue(any("run 17" in n for n in doc["notes"]), doc["notes"])
+        # main is still at the last tested head: nothing runs
+        write((20, head, "in_progress", "", title + head), (17, head, "completed", "success", title + head))
+        code, doc, out = run_advisory()
+        self.assertEqual([n for n, e in doc["lanes"].items() if e["run"]], ["changes"], out)
+        # no advisory run finished yet: every advisory lane (fail open)
+        write((20, head, "in_progress", "", title + head))
+        code, doc, out = run_advisory()
+        self.assertTrue(all(doc["lanes"][n]["run"] for n in ("linux", "unit", "asan", "htmlui", "mcp", "smoke", "windows")), out)
+        self.assertEqual(doc["mcp"]["mode"], "ci")
+        self.assertTrue(any("no earlier advisory run" in f for f in doc["fallbacks"]), doc["fallbacks"])
 
     def test_unusable_arguments_exit_2(self):
         with self.assertRaises(SystemExit) as e, redirect_stdout(io.StringIO()):
