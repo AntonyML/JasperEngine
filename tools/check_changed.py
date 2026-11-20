@@ -105,6 +105,7 @@ SELF_TESTS = {"tools/check_changed.py": "tools/test_check_changed.py", "tools/ch
               "tools/ci/release.sh": "tools/ci/test_release.py", "tools/ci/test_release.py": "tools/ci/test_release.py",
               "tools/ci/test_check_shader_lod.py": "tools/ci/test_check_shader_lod.py",
               "tools/ci/plan_lanes.py": "tools/ci/test_plan_lanes.py", "tools/ci/test_plan_lanes.py": "tools/ci/test_plan_lanes.py",
+              "tools/ci/plan_inputs.py": "tools/ci/test_plan_inputs.py", "tools/ci/test_plan_inputs.py": "tools/ci/test_plan_inputs.py",
               "tools/ci/mcp_gate.py": "tools/ci/test_mcp_gate.py", "tools/ci/test_mcp_gate.py": "tools/ci/test_mcp_gate.py",
               "tools/ci/pr-evidence.sh": "tools/ci/test_pr_evidence.py", "tools/ci/test_pr_evidence.py": "tools/ci/test_pr_evidence.py"}
 # the shader lint, with its own tests, when an engine shader changes (.claude/rules/rendering.md)

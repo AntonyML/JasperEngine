@@ -1011,8 +1011,9 @@ Windows jobs' builds and the core tests' run included.
 - **MCP in the merge queue** is planned from the coverage map, not the whole suite: a regression the
   map misses is the nightly's to find. A planned file outside the CI suite (it needs the fixture
   project, or is `CI_EXCLUDED`) is listed under "not run in CI"; `MCP_SUITE=all` locally covers it.
-- **Push to `main`** builds only: its tests ran in the queue. It saves the caches (ccache per lane,
-  the deps dumps `changes` plans from): a PR restores what `main` saved, never what the queue did.
+- **Push to `main`** builds only: its tests ran in the queue. It saves the caches (ccache per lane): a
+  PR restores what `main` saved, never what the queue did; and publishes the deps dumps `changes`
+  plans from (below, "Plan inputs").
 - **ccache in CI**: a build runs with no size limit (a cleanup in the middle of a build evicts the
   restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
   file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
@@ -1035,7 +1036,7 @@ Windows jobs' builds and the core tests' run included.
   | Windows editor | 0.91 | 1.0G | yes |
   | Android | 0.63 | 0.7G | yes |
   | web | 0.48 | 0.6G | yes |
-  | Gradle, Vulkan SDK, plan inputs, coverage map, MCP timings | 0.73, 0.21, under 0.01 each | | yes |
+  | Gradle, Vulkan SDK, MCP timings | 0.73, 0.21, under 0.01 | | yes |
   | Windows OpenGL | 1.4 | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
   | unit-editor | 4.0 | | no |
   | asan-core, asan-editor | 5.3 both (one job, PR 26) | | no: neither binary's fits what is left, so ASan does not run on push |
@@ -1047,13 +1048,38 @@ Windows jobs' builds and the core tests' run included.
   second list, so its last entry goes at once instead of holding the budget for 7 days.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
+### Plan inputs
+
+`changes` plans a PR from two inputs made on `main`: the Ninja deps dumps of the three test trees
+(`tools/ci/dump_deps.sh`, by the unit and htmlui lanes on every push) and the MCP coverage map (the
+nightly's coverage shards). They live on the data branch `ci-plan-inputs`, not in the cache: GitHub
+evicted the cache entries of both for days at a time (of the 135 PR and merge-queue runs from
+2026-11-14 to 2026-11-20, 11 had a map; of the 67 PR runs after the first deps dump was saved, 11 had
+none), and each missing input widened its lane to everything. `tools/ci/plan_inputs.py`:
+
+- `publish` replaces the branch with one parentless commit holding `manifest.json` (each input's
+  `main` commit and run), `coverage-map.json.gz`, `deps/<tree>.deps.gz` and `shadow.jsonl` (below),
+  over what the branch held; a push another job won is retried on top of it. The deps dumps are
+  compacted first (each test unit with its dependencies inside the repository, every other object
+  with its source: 150 MB of dumps become 14 MB, 0.5 MB compressed), and select the same suites
+  (`tools/ci/test_plan_inputs.py`; 400 sampled sources of the real dumps, 0 differences).
+- Writers: the `plan inputs` job of a push to `main` (the deps dumps) and the nightly's `Coverage
+  map` job on `main`, the only jobs with `contents: write`, running `main`'s code. The branch is
+  outside the `main` ruleset; a PR, a fork or another branch's run never writes it.
+- `fetch` (the `changes` job, read-only) writes what the branch has into `build/ci-inputs`; no
+  branch or no input fetches nothing, and the plan widens as before. Locally:
+  `python3 tools/ci/plan_inputs.py fetch --out /tmp/inputs`, then `tools/check-changed --deps-from
+  /tmp/inputs/deps` with `JASPER_MCP_COVERAGE_MAP=/tmp/inputs/coverage-map.json`.
+- Freshness: the map is remade every night and a map older than 14 days or 400 commits still widens
+  (`MAP_MAX_AGE_DAYS`, `MAP_MAX_COMMITS`); the deps dumps on every push to `main`.
+
 ### The nightly and releases
 
 - **Nightly** (`nightly.yml`, 03:17 UTC, or dispatched): the slow configurations (HTML UI on Vulkan
   and under ASan, TSan, texture formats on lavapipe, the unity builds of the editor, the engine and
   both unit-test trees, every fixture's smoke on OpenGL, GLES3 and Vulkan through
-  `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt player parity) and the whole MCP CI suite, which also refreshes the coverage map and the shard
-  timings. A failure opens or updates the issue
+  `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt player parity) and the whole MCP CI suite, which also refreshes the coverage map (below, "Plan
+  inputs") and the shard timings. A failure opens or updates the issue
   labelled `nightly`. When `main` moved, it publishes the prerelease `nightly-YYYYMMDD` (the newest 14
   are kept); the slow lanes do not hold it back.
 - **Stable** (`release.yml`, dispatched with a `vX.Y.Z` version, an optional commit that defaults to
