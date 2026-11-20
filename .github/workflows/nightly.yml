@@ -102,9 +102,11 @@ jobs:
     steps:
       - name: Start
         run: echo "JASPER_CI_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      # every commit and tag (git describe stamps the build) but no old blob: they are never read
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/free-disk
         with:
           need: 80
@@ -195,6 +197,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none
       # no need: it always frees, its trees and players took 87 GB of / (the nightly of 2026-11-20)
       - uses: ./.github/actions/free-disk
       - uses: ./.github/actions/image
@@ -277,6 +280,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/free-disk
         with:
           need: 20
@@ -493,6 +497,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/free-disk
         with:
           need: 25

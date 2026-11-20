@@ -1136,6 +1136,10 @@ PR or in the queue, about 100 in the nightly).
   unchanged from the checkout (the Title Art HDRIs, fonts and thumbnails, the sound library: half the
   archive, already compressed), and `unpack` copies them back from the job's checkout of the same
   commit: 199 MB to 100 MB. A folder the build changed travels in the archive.
+- **Checkout**: depth 1, except `changes` (every commit, `filter: blob:none`), `mcp` (depth 2: the
+  title golden ledger compares the merge commit with its base) and the nightly's and the release's
+  build jobs (every commit and tag for `git describe`, `filter: blob:none`: the history without the
+  old file contents).
 
 ### Measured lane times
 
