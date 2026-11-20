@@ -21,6 +21,8 @@ applies CI's stricter rules:
   it cannot);
 - fail open: no plan, or a .github/ change, runs every lane (MCP: the whole CI suite); check-changed's
   own widenings (a missing deps dump or map) are kept and said, in `fallbacks`.
+- rollback: --full-selection (ci.yml passes it when the repository variable CI_FULL_SELECTION is
+  true) runs a PR's or the queue's every lane whole for any change that builds.
 
 MCP shards: `tools/mcp/shard.py plan` over `run_tests.py --list` of the files, by the per-test
 seconds of earlier runs (--test-seconds, `mcp-test-seconds.json`), SHARD_WORKERS editors per
@@ -77,6 +79,8 @@ NIGHTLY_LEFT_OUT = {
     "test_pixel_fx_export.py": "reads SMOKE_METHOD=compile smoke runs of tools/fixtures/pixel-fx-game made first on "
                                "the same machine (PFX_SMOKE_DIRS), which an MCP shard does not make",
 }
+# the repository variable that turns the selection off (ci.yml passes --full-selection when it is "true")
+FULL_SELECTION_VARIABLE = "CI_FULL_SELECTION"
 TEST_NAME = re.compile(r"^test_\w+\.py::\w+$")
 # run_tests.py --list through uv and the harness's pinned packages (tools/ci/test_plan_lanes.py's
 # scratch test files import nothing, and list without them)
@@ -204,16 +208,17 @@ def suite_choice(value) -> tuple[bool, str]:
 
 
 def decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_out: dict[str, str],
-           nightly_out: dict[str, str]) -> dict:
+           nightly_out: dict[str, str], full_selection: bool = False) -> dict:
     """The lanes of an event, from check-changed's plan (None: there is none, plan_error says why),
-    in LANES order."""
-    result = _decide(event, plan, plan_error, ci, left_out, nightly_out)
+    in LANES order. full_selection (the rollback switch, FULL_SELECTION_VARIABLE): a pull request or
+    the merge queue runs every lane whole for any change that builds."""
+    result = _decide(event, plan, plan_error, ci, left_out, nightly_out, full_selection)
     result["lanes"] = {name: result["lanes"][name] for name in LANES}
     return result
 
 
 def _decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_out: dict[str, str],
-            nightly_out: dict[str, str]) -> dict:
+            nightly_out: dict[str, str], full_selection: bool = False) -> dict:
     lanes: dict[str, dict] = {}
     fallbacks: list[str] = []
     result = {"lanes": lanes, "unit_filter": {"core": "", "editor": ""}, "unit_run": {"core": False, "editor": False},
@@ -277,6 +282,10 @@ def _decide(event: str, plan: dict | None, plan_error: str, ci: list[str], left_
     if github:
         fallbacks.append(f"{github[0]} changed: every lane, the whole MCP CI suite")
         everything(f"{github[0]} changed (CI itself): every lane")
+        return result
+    if full_selection:
+        fallbacks.append(f"the repository variable {FULL_SELECTION_VARIABLE} is true: every lane, every test (the selection's rollback)")
+        everything(f"{FULL_SELECTION_VARIABLE} is true: every lane, unfiltered")
         return result
     for name in PLATFORM_LANES + ("lint",):
         lane(name, True, f"{first} changed (anything outside CI_NOTHING_READS builds)")
@@ -533,6 +542,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--coverage-map", type=Path, help="the nightly's coverage map (none: the CI suite for C++ changes)")
     ap.add_argument("--test-seconds", type=Path, help="per-test seconds of earlier runs (mcp-test-seconds.json)")
     ap.add_argument("--github-output", type=Path, help="append the job outputs here ($GITHUB_OUTPUT)")
+    ap.add_argument("--full-selection", action="store_true",
+                    help=f"the rollback switch ({FULL_SELECTION_VARIABLE}): a PR or the queue runs every test of every lane")
     ap.add_argument("--inputs-manifest", type=Path, help="the plan inputs' manifest.json (tools/ci/plan_inputs.py fetch)")
     args = ap.parse_args(argv)
 
@@ -546,7 +557,7 @@ def main(argv: list[str]) -> int:
                                             args.deps_from.resolve() if args.deps_from else None,
                                             args.coverage_map.resolve() if args.coverage_map else None)
         ci, left_out, nightly_out = mcp_suites(root)
-        result = decide(args.event, plan, error, ci, left_out, nightly_out)
+        result = decide(args.event, plan, error, ci, left_out, nightly_out, args.full_selection)
         shards: list[str] = []
         notes: list[str] = []
         tests: list[str] | None = None

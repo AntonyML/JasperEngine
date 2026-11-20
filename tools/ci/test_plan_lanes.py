@@ -170,6 +170,23 @@ class Rules(unittest.TestCase):
         self.assertEqual(r["mcp"]["mode"], "ci")
         self.assertTrue(any(".github/workflows/ci.yml" in f for f in r["fallbacks"]))
 
+    def test_the_rollback_variable_selects_every_test(self):
+        # CI_FULL_SELECTION=true (a repository variable): the selection is not trusted, every lane runs whole
+        p = plan(["engine/core/Foo.cpp"], builds=("linux", "unit-tests"), unit={"core": ["Foo"], "editor": [], "htmlui": []},
+                 mcp=["test_a.py"])
+        for event in ("pull_request", "merge_group"):
+            r = pl.decide(event, p, "", CI, LEFT_OUT, NIGHTLY_OUT, full_selection=True)
+            self.assertEqual(runs(r), set(pl.LANES), event)
+            self.assertEqual((r["unit_run"], r["unit_filter"], r["htmlui_filter"]),
+                             ({"core": True, "editor": True}, {"core": "", "editor": ""}, ""))
+            self.assertEqual((r["mcp"]["mode"], len(r["mcp"]["files"])), ("ci", 3))
+            self.assertTrue(any("CI_FULL_SELECTION" in f for f in r["fallbacks"]), r["fallbacks"])
+        # prose nothing reads still runs nothing; push stays the build lanes
+        r = pl.decide("pull_request", plan(["docs/specs/S1.md"], builds=()), "", CI, LEFT_OUT, NIGHTLY_OUT, full_selection=True)
+        self.assertEqual(runs(r), {"changes"})
+        r = pl.decide("push", p, "", CI, LEFT_OUT, NIGHTLY_OUT, full_selection=True)
+        self.assertEqual(r["mcp"]["mode"], "none")
+
     def test_github_output(self):
         r = decide("pull_request", plan(["engine/core/Foo.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": []}))
         doc = {"full": False, "lanes": r["lanes"], "unit_filter": r["unit_filter"], "htmlui_filter": r["htmlui_filter"],

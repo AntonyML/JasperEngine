@@ -113,6 +113,8 @@ jobs:
           MQ_BASE: ${{ github.event.merge_group.base_sha }}
           MQ_HEAD: ${{ github.event.merge_group.head_sha }}
           PUSH_BEFORE: ${{ github.event.before }}
+          # the selection's rollback: a repository variable set to true runs every test of every lane
+          FULL_SELECTION: ${{ vars.CI_FULL_SELECTION }}
         run: |
           case "$EVENT" in
               # the checked-out merge commit: base..HEAD is exactly the PR, and no scratch checkout is needed
@@ -129,6 +131,7 @@ jobs:
           [[ -f build/ci-inputs/coverage-map.json ]] && args+=(--coverage-map build/ci-inputs/coverage-map.json)
           [[ -f build/ci-inputs/mcp-test-seconds.json ]] && args+=(--test-seconds build/ci-inputs/mcp-test-seconds.json)
           [[ -f build/ci-inputs/manifest.json ]] && args+=(--inputs-manifest build/ci-inputs/manifest.json)
+          [[ "$FULL_SELECTION" == true ]] && args+=(--full-selection)
           tools/ci/logged.sh plan "python3 tools/ci/plan_lanes.py $(printf '%q ' "${args[@]}")"
 
       # what each test lane runs and why (owner, dependency, policy, smoke; a whole suite: full or fallback)

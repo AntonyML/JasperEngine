@@ -1089,6 +1089,12 @@ what widened the plan and the plan inputs' commits and ages):
 | `full` | the event runs the whole suite (merge queue units, a full run, the nightly) |
 | `fallback` | a widening ran the whole suite, and says which (no map, a stale map, a new source, CMake, a test's data, `.github/`) |
 
+**Rollback**: the repository variable `CI_FULL_SELECTION` set to `true` turns the selection off: a PR
+or merge-queue run whose change builds runs every lane whole (unit and HTML UI unfiltered, the whole
+MCP CI suite), and its plan says so in `fallbacks`; prose nothing reads still runs nothing.
+`gh variable set CI_FULL_SELECTION --body true` sets it, `gh variable delete CI_FULL_SELECTION` lifts
+it; the next run's `changes` reads it.
+
 ### The nightly and releases
 
 - **Nightly** (`nightly.yml`, 03:17 UTC, or dispatched): the slow configurations (HTML UI on Vulkan
