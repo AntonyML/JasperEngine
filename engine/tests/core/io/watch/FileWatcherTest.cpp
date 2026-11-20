@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 
 #if defined(JASPERENGINE_WATCH_FSEVENTS)
@@ -270,6 +271,80 @@ INSTANTIATE_TEST_SUITE_P(Backends, FileWatcherTests, ::testing::Values(WatchBack
                          [](const ::testing::TestParamInfo<WatchBackendKind>& info) {
                              return std::string(info.param == WatchBackendKind::Native ? "Native" : "Polling");
                          });
+
+namespace {
+
+    // The polling backend only
+    class FileWatcherPolling : public FileWatcherTests {};
+
+    // Parks the polling thread before each pass until let through (watch::setPollingScanHookForTesting)
+    struct ScanGate {
+        std::mutex mutex;
+        std::condition_variable changed;
+        int arrived = 0;   // passes that reached the gate
+        int allowed = 0;   // passes let through, in arrival order
+        bool open = false;
+
+        void pass() {
+            std::unique_lock<std::mutex> lock(mutex);
+            const int ticket = arrived++;
+            changed.notify_all();
+            changed.wait(lock, [&]() { return open || ticket < allowed; });
+        }
+        bool waitArrived(int count) {
+            std::unique_lock<std::mutex> lock(mutex);
+            return jobs::detail::timedWait(changed, lock, timeLimit(ms(5000)), [&]() { return arrived >= count; });
+        }
+        void allow(int count) {
+            std::lock_guard<std::mutex> lock(mutex);
+            allowed = count;
+            changed.notify_all();
+        }
+        void release() {
+            std::lock_guard<std::mutex> lock(mutex);
+            open = true;
+            changed.notify_all();
+        }
+    };
+
+}
+
+// A save's delete and rewrite straddling a scan that comes late (a slow scan of a big project, a
+// preempted poll thread) is still one Modified: the removal waits for the next completed scan,
+// not for a time (#37)
+TEST_P(FileWatcherPolling, DeleteRecreateAcrossALateScan) {
+    const fs::path target = dir.path / "hero.png";
+    writeText(target, "v1");
+    startWatching();
+
+    auto gate = std::make_shared<ScanGate>();
+    struct Unhook {
+        std::shared_ptr<ScanGate> gate;
+        ~Unhook() {
+            gate->release();
+            watch::setPollingScanHookForTesting(nullptr);
+        }
+    } unhook{gate};
+    watch::setPollingScanHookForTesting([gate]() { gate->pass(); });
+    ASSERT_TRUE(gate->waitArrived(1));
+
+    // one pass sees the file gone; the next one is parked before it looks
+    fs::remove(target);
+    gate->allow(1);
+    ASSERT_TRUE(gate->waitArrived(2));
+    writeText(target, "v2 bytes");
+    // the late pass: held past any time-based hold (the old one was two intervals + 100 ms)
+    std::this_thread::sleep_for(POLL_INTERVAL * 3);
+    gate->release();
+
+    const std::vector<FileChange> got = collect(1);
+    ASSERT_EQ(got.size(), 1u) << describe(got);
+    EXPECT_EQ(got[0].kind, FileChangeKind::Modified);
+    EXPECT_EQ(got[0].path, target);
+}
+
+INSTANTIATE_TEST_SUITE_P(Polling, FileWatcherPolling, ::testing::Values(WatchBackendKind::Polling),
+                         [](const ::testing::TestParamInfo<WatchBackendKind>&) { return std::string("Polling"); });
 
 TEST(FileWatcherRules, Exclusions) {
     const fs::path root = "/project";
