@@ -1002,9 +1002,11 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-      # (the OpenGL tree runs the core tests, whose crash and hang reports name frames: debug information)
+      # (the OpenGL tree runs the core tests, whose crash and hang reports name frames: debug information).
+      # Not on push: the engine legs keep no ccache entry, so a build there warms nothing (the Vulkan
+      # SDK's cache above still saves); the merge queue built them
       - name: Engine
-        if: startsWith(matrix.part, 'engine-')
+        if: startsWith(matrix.part, 'engine-') && github.event_name != 'push'
         env:
           ENGINE_DEBUG_INFO: ${{ matrix.part == 'engine-glcore' && '1' || '' }}
         run: tools/ci/windows.sh engine "${PART#engine-}"
