@@ -318,14 +318,19 @@ class Shards(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_about_twenty_minutes_a_shard_up_to_the_cap(self):
+    def test_more_shards_while_each_saves_more_than_its_setup(self):
         tests = [f"test_f{i}.py::test_x" for i in range(100)]
-        # 100 files of 10 min (+ 20 s overhead): 2 workers a shard, two files each: 25 shards
+        # 100 files of 10 min, 2 workers a shard: 10 shards of 5 files a worker; 11 or 12 take as long,
+        # and 13 save 10 min for 3 more setups (12 min)
         times = {t: 600.0 for t in tests}
-        self.assertEqual(self.shard_count(tests, times, 256), 25)
+        self.assertEqual(self.shard_count(tests, times, 256), 10)
         self.assertEqual(self.shard_count(tests, times, 8), 8)
         self.assertEqual(self.shard_count(tests[:1], {}, 8), 1)
-        # one file longer than a shard: it alone sets the length, no more shards for it
+        # 8 files of 5 min: a second shard halves 20 min, more than its 4 min setup
+        self.assertEqual(self.shard_count(tests[:8], {t: 300.0 for t in tests}, 8), 2)
+        # 4 files of 100 s: a second shard would save less than its setup
+        self.assertEqual(self.shard_count(tests[:4], {t: 100.0 for t in tests}, 8), 1)
+        # one file longer than all the rest: it alone sets the length, no more shards for it
         self.assertEqual(self.shard_count(tests[:3], {tests[0]: 7200.0}, 256), 1)
 
     def shard_count(self, tests, times, cap):
@@ -359,6 +364,7 @@ class Runs(unittest.TestCase):
         self.real_root = pl.cc.ROOT
         pl.cc.ROOT = root
         pl.LIST_WITH_UV = False
+        self.shard = pl.load_module(HERE.parent / "mcp" / "shard.py", "test_plan_lanes_runs_shard")
 
     def tearDown(self):
         pl.cc.ROOT = self.real_root
@@ -403,6 +409,39 @@ class Runs(unittest.TestCase):
         self.assertEqual(sorted(t for c in shard["chunks"] for t in c["tests"]),
                          ["test_made_0", "test_made_1", "test_one", "test_two"])
         self.assertTrue(doc["lanes"]["linux"]["run"] and doc["lanes"]["windows"]["run"])
+
+    def plan_with_timings(self, event, committed: str, cache: dict | None = None):
+        head = self.commit("tools/mcp/ci-timings.json", committed)
+        args = ["--event", event, "--base", self.base, "--head", head, "--out-dir", str(self.tmp / "out")]
+        if cache is not None:
+            (self.tmp / "cache.json").write_text(json.dumps(cache))
+            args += ["--test-seconds", str(self.tmp / "cache.json")]
+        code, doc, out = self.run_main(*args)
+        self.assertEqual(code, 0, out)
+        plan = json.loads((self.tmp / "out/mcp-plan/plan.json").read_text())
+        return doc, {c["file"]: c["seconds"] for s in plan["shards"].values() for c in s["chunks"]}
+
+    COMMITTED = json.dumps({"format": 1, "default_test_seconds": 20.0, "runs": [], "tests": {},
+                            "files": {"test_a.py": {"seconds": 1200.0, "tests": 4}}})
+
+    def test_the_committed_timings_first_the_cache_for_the_rest(self):
+        cache = {"test_a.py::test_one": 5.0, "test_b.py::test_one": 100.0}
+        doc, seconds = self.plan_with_timings("full", self.COMMITTED, cache)
+        overhead = self.shard.CHUNK_OVERHEAD
+        self.assertEqual(seconds["test_a.py"], 1200.0 + overhead)                       # committed, not the cache's 5 s
+        self.assertEqual(seconds["test_b.py"], 100.0 + 3 * 20.0 + overhead)              # the cache, else its default
+        self.assertTrue(any("tools/mcp/ci-timings.json" in n for n in doc["notes"]), doc["notes"])
+
+    def test_the_nightly_plans_by_its_own_seconds(self):
+        # its shards build the games a PR's skip: the committed PR timings would misjudge them
+        doc, seconds = self.plan_with_timings("nightly", self.COMMITTED, {"test_a.py::test_one": 500.0})
+        self.assertEqual(seconds["test_a.py"], 500.0 + 3 * self.shard.DEFAULT_SECONDS + self.shard.CHUNK_OVERHEAD)
+
+    def test_an_unreadable_committed_file_is_said_and_left_out(self):
+        doc, seconds = self.plan_with_timings("full", "{", {"test_a.py::test_one": 5.0})
+        self.assertEqual(seconds["test_a.py"], 5.0 + 3 * self.shard.DEFAULT_SECONDS + self.shard.CHUNK_OVERHEAD)
+        self.assertTrue(any("tools/mcp/ci-timings.json" in f and "left out" in f for f in doc["fallbacks"]),
+                        doc["fallbacks"])
 
     def test_an_older_head_is_planned_in_a_worktree_of_its_own(self):
         old = self.commit("engine/core/Foo.cpp", "int foo = 1;\n")

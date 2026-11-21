@@ -2030,10 +2030,10 @@ rest of S82 lands in 6B.
     red before this change (51 lines). `PachislopPortTest.HashedMapKeysMatchRawSources` (every map id and text keyed by
     hash ports the committed dump to the same files) and `RawDeniedMapKeyFails` cover the port. Spec documents keep the
     terms in §6.7.3's rename table and the denied-term list.
-35. **R36's gate: four shards, one render of its own.** `test_gate` was one test of 830 items, 4,061 to 5,618 s in a
-    merge-queue run (44735818671, 44745111854), the longest MCP shard's wall time on its own. It is now
-    `test_gate_1` to `test_gate_4` (TESTS_INDEPENDENT, a shard by item id, so an item's texts build their programs in
-    one editor), as §6.14.2 meant it. Each item renders once before its checks (the render-first node cache path stays);
-    the second render and its byte comparison are gone: two renders with identical bytes is `check_title`'s default
-    `deterministic` check, which the gate now requires to PASS for every item (red: without it, the gate fails "did
-    not run").
+35. **R36's gate: one render of its own.** The gate runs as `test_gate_<k>_of_8` (TESTS_INDEPENDENT, consecutive
+    parts; CI's shard balancing, §6.14.2's sharding). Each item renders once before its checks (the render-first node
+    cache path stays); the second render and its byte comparison are gone: two renders with identical bytes is
+    `check_title`'s default `deterministic` check, which the gate now requires to PASS for every item (red: without
+    it, the gate fails "did not run"). Measured with the second render dropped, the gate took 2,891 to 4,812 s in three
+    PR runs (44838738791, 44850307863, 44871357924), against 4,061 and 5,618 s with it (merge-queue runs 44735818671,
+    44745111854); runners differ by up to 1.7 times, so the saving is real but not one number.

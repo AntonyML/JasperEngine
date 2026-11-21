@@ -6,13 +6,14 @@
 test_content: 195 looks with §6.6's per-family counts, 33 color schemes, 73 templates, at least two
 3D looks per family, ids ending in -3d exactly for 3D looks.
 
-test_gate_<k>: every available item on its sample texts (looks: HERO, 大当り, 1234; schemes on the
+test_gate: every available item on its sample texts (looks: HERO, 大当り, 1234; schemes on the
 preview look; templates in en and ja) renders at 0.25 x the canvas, is not flat, and passes every
 default check_title check (its check_allow excepted), `deterministic` (two renders, identical bytes)
 among them, and the style lint (its lint_allow excepted). Allowlists carry reasons and at most 10 %
-of a kind carries any. Unavailable items are counted by reason, never skipped silently. The items
-are split by item id into GATE_SHARDS tests, each in an editor of its own (TESTS_INDEPENDENT), so
-no one test is the run's wall time; JASPER_TITLE_LIBRARY_ONLY and _KINDS narrow them by hand."""
+of a kind carries any.
+Unavailable items are counted by reason, never skipped silently. The items in GATE_PARTS consecutive
+parts, test_gate_<k>_of_<n> (TESTS_INDEPENDENT): the whole gate in one test took 52 to 103 min in CI,
+longer than any MCP shard should, and one test is a piece no shard plan splits."""
 
 import asyncio
 import fnmatch
@@ -24,8 +25,8 @@ from harness import Editor
 CI = True
 EDITOR = {"create": True, "name": "Title Library Gate"}
 TIMEOUT = 3600
-TESTS_INDEPENDENT = ("each gate shard checks its own items in an editor of its own", ["test_gate_*"])
-GATE_SHARDS = 4
+TESTS_INDEPENDENT = ("each part of the gate renders its own items in a project of its own", ["test_gate_*"])
+GATE_PARTS = 8
 
 FAMILY_LOOKS = {"casino": 44, "metal": 31, "neon": 10, "elements": 10, "gems": 10, "wa": 10, "scifi": 10, "fantasy": 10,
                 "horror": 10, "cartoon": 10, "retro": 10, "anime": 10, "sports": 10, "minimal": 10}
@@ -72,15 +73,13 @@ async def test_content(ed: Editor):
         ed.check_eq(r["id"].endswith("-3d"), r.get("dim") == "3d", f"{r['id']}: -3d <-> dimension 3d")
 
 
-def shard(items: list, index: int) -> list:
-    """Shard `index` of GATE_SHARDS, by item id: an item's sample texts stay together, so its
-    programs are built once, in one editor"""
+def part_of(items: list, part: int, parts: int) -> list:
+    """The part-th of `parts` consecutive runs of the items (a family's items stay together, so a part
+    builds few Title Art programs another part builds too)."""
     only = [g for g in os.environ.get("JASPER_TITLE_LIBRARY_ONLY", "").split(",") if g]
     if only:
         items = [item for item in items if any(fnmatch.fnmatchcase(item[1], g) for g in only)]
-    ids = sorted({item[1] for item in items})
-    mine = {ref for k, ref in enumerate(ids) if k % GATE_SHARDS == index}
-    return [item for item in items if item[1] in mine]
+    return items[part * len(items) // parts:(part + 1) * len(items) // parts]
 
 
 async def checked(ed: Editor, path: str, **args) -> dict:
@@ -115,7 +114,7 @@ async def render_once(ed: Editor, path: str) -> None:
     ed.check(not metrics.get("flat", False), f"{path}: the render is not flat")
 
 
-async def gate(ed: Editor, index: int):
+async def gate(ed: Editor, part: int, parts: int):
     await setup(ed)
     counts = {"looks": [0, 0], "color_schemes": [0, 0], "templates": [0, 0]}   # checked, unavailable
     reasons: dict = {}
@@ -136,12 +135,12 @@ async def gate(ed: Editor, index: int):
             for text, language in samples:
                 work.append((kind, r["id"], text, language))
     n = 0
-    for kind, ref, text, language in shard(work, index):
+    for kind, ref, text, language in part_of(work, part, parts):
         detail = await ed.call("list_title_library", kind=kind, id=ref)
         if text == "大当り" and kind == "looks" and not detail.get("font"):
             continue     # an effects-only look has no font of its own to judge kanji in
         n += 1
-        path = f"assets/gate/{index}-{n}.titleart"
+        path = f"assets/gate/{part}-{n}.titleart"
         create = {"template": ref, "language": language} if kind == "templates" else {"look": ref, "text": text}
         if kind == "color_schemes":
             create = {"look": "casino/outline-gold", "text": text}
@@ -168,25 +167,26 @@ async def gate(ed: Editor, index: int):
                 continue
             failures.append(f"{ref} ({text or language}): {cid} {check['status']}: {check.get('message', '')} measured {check.get('measured')}")
         counts[kind][0] += 1
-    ed.check(n > 0 or os.environ.get("JASPER_TITLE_LIBRARY_ONLY"), f"shard {index + 1} of {GATE_SHARDS} checked no item")
-    print(f"[gate] checked/unavailable per kind: {counts}; unavailable by reason: {reasons}; tier band drops reported: {dropped}")
+    ed.check(n > 0 or os.environ.get("JASPER_TITLE_LIBRARY_ONLY"), f"part {part + 1} of {parts} checked no item")
+    print(f"[gate] part {part + 1} of {parts}: checked/unavailable per kind: {counts}; unavailable by reason: {reasons}; "
+          f"tier band drops reported: {dropped}")
     # every failure at once, so one run is the whole gate's answer
     for line in failures:
         print(f"[gate] FAIL {line}")
     ed.check(not failures, f"{len(failures)} check failures over {sum(c[0] for c in counts.values())} renders (listed above)")
 
 
-def _make_gate_test(index: int) -> None:
-    async def gate_shard(ed: Editor):
-        await gate(ed, index)
+def _make_gate_test(part: int, parts: int) -> None:
+    async def gate_part(ed: Editor):
+        await gate(ed, part, parts)
 
-    gate_shard.__name__ = gate_shard.__qualname__ = f"test_gate_{index + 1}"
-    gate_shard.__doc__ = f"the gate's items of shard {index + 1} of {GATE_SHARDS}"
-    globals()[gate_shard.__name__] = gate_shard
+    gate_part.__name__ = gate_part.__qualname__ = f"test_gate_{part + 1}_of_{parts}"
+    gate_part.__doc__ = f"the gate over part {part + 1} of {parts} of the library's items"
+    globals()[gate_part.__name__] = gate_part
 
 
-for _index in range(GATE_SHARDS):
-    _make_gate_test(_index)
+for _part in range(GATE_PARTS):
+    _make_gate_test(_part, GATE_PARTS)
 
 
 RED = __import__("pathlib").Path(__file__).resolve().parent / "fixtures" / "title-library-red"

@@ -27,9 +27,12 @@ applies CI's stricter rules:
 - fail open: no plan, or a .github/ change, runs every lane (MCP: the whole CI suite); check-changed's
   own widenings (a missing deps dump or map) are kept and said, in `fallbacks`.
 
-MCP shards: `tools/mcp/shard.py plan` over `run_tests.py --list` of the files, by the per-test
-seconds of earlier runs (--test-seconds, `mcp-test-seconds.json`), SHARD_WORKERS editors per
-shard and about SHARD_SECONDS each; at most MAX_PLANNED_SHARDS, except for full and nightly.
+MCP shards: `tools/mcp/shard.py plan` over `run_tests.py --list` of the files, by the committed
+timings of CI's PR and merge-queue shards (tools/mcp/ci-timings.json, refitted daily), then for the
+files they lack the per-test seconds of earlier runs (--test-seconds, the nightly's
+`mcp-test-seconds.json`; the nightly plans by those alone: its shards build the games a PR's skip),
+SHARD_WORKERS editors per shard; as many shards as each shorten the lane by more than the setup they
+cost (SHARD_SETUP_SECONDS); at most MAX_PLANNED_SHARDS, except for full and nightly.
 
 Writes <out-dir>/lanes.json, <out-dir>/check-changed.json (the plan) and <out-dir>/mcp-plan/
 (plan-<shard>.json, tests.txt). Exit 0 whenever lanes.json was written, widened or not; 2 on
@@ -39,6 +42,7 @@ unusable arguments.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import importlib.util
 import json
 import math
@@ -58,8 +62,13 @@ import check_changed as cc  # noqa: E402
 EVENTS = ("pull_request", "merge_group", "push", "workflow_dispatch", "full", "nightly")
 LANES = ("changes", "lint", "linux", "unit", "asan", "htmlui", "mcp", "smoke", "web", "android", "windows", "macos", "ios")
 PLATFORM_LANES = ("linux", "web", "android", "windows", "macos", "ios")
-SHARD_SECONDS = 1200.0      # about 20 minutes of recorded work a shard
+# what one more MCP shard costs a runner besides its tests: job start to the shard's step and after it
+# (checkout, disk, the image, the editor install), median 236 + 6 s over 46 shards of runs 44666496445,
+# 44735818671, 44745111854, 44753600317, 44764139781, 44799402546
+SHARD_SETUP_SECONDS = 240.0
 SHARD_WORKERS = 2           # tools/ci/mcp_shard.sh runs -j 2 on a 4-vCPU runner
+CHUNK_SECONDS = 600.0       # an independent file's chunks (shard.py plan --chunk-seconds)
+COMMITTED_TIMINGS = "tools/mcp/ci-timings.json"
 MAX_PLANNED_SHARDS = 8      # a pull request's or the merge queue's MCP lane (CI design §16.2)
 MAX_SHARDS = 256            # a workflow's matrix limit: full and nightly take as many as they need
 FILTER_LIMIT = 60000        # a longer --gtest_filter runs everything instead (an argument's size)
@@ -167,40 +176,65 @@ def list_tests(root: Path, files: list[str]) -> tuple[list[str] | None, str]:
 
 
 def shard_count(shard, tests: list[str], times: dict[str, float], tests_dir: Path, cap: int) -> int:
-    """The fewest shards of SHARD_WORKERS whose longest takes about SHARD_SECONDS (or the longest
-    chunk, which no split shortens), up to cap."""
-    chunks = shard.make_chunks(tests, times, 600.0, tests_dir)
+    """The fewest shards of SHARD_WORKERS that no more shards (up to cap) beat by more than the
+    setup the added ones cost (SHARD_SETUP_SECONDS each): past that a shard costs a runner more than
+    it saves the lane, and once the longest chunk sets the length it saves nothing."""
+    chunks = shard.make_chunks(tests, times, CHUNK_SECONDS, tests_dir)
     total = sum(c.seconds for c in chunks)
     longest = max((c.seconds for c in chunks), default=0.0)
-    target = max(SHARD_SECONDS, longest) * 1.1
-    n = max(1, min(cap, math.ceil(total / (SHARD_WORKERS * target))))
-    while n < cap:
+    # (past this many the longest chunk alone is the length)
+    upper = max(1, min(cap, math.ceil(total / (SHARD_WORKERS * max(longest, 1.0))) + 1))
+
+    def estimate(n: int) -> float:
         shards = [shard.parse_shard(f"{k}:{SHARD_WORKERS}") for k in range(1, n + 1)]
-        if shard.plan(tests, times, shards, 600.0, tests_dir=tests_dir)["estimate_seconds"] <= target:
-            break
-        n += 1
-    return n
+        shard.assign([dataclasses.replace(c) for c in chunks], shards)
+        return max(max(s.finish) for s in shards)
+
+    estimates = {n: estimate(n) for n in range(1, upper + 1)}
+    for n in range(1, upper + 1):
+        if all(estimates[n] - estimates[m] <= (m - n) * SHARD_SETUP_SECONDS for m in range(n + 1, upper + 1)):
+            return n
+    return upper
 
 
-def plan_shards(root: Path, tests: list[str], test_seconds: Path | None, cap: int, out: Path) -> tuple[list[str], str]:
+def readable(root: Path, paths: list[Path]) -> tuple[list[Path], list[str]]:
+    """The timings files that parse, and a fallback for each that does not."""
+    good, fallbacks = [], []
+    for p in paths:
+        try:
+            json.loads(p.read_text())
+            good.append(p)
+        except (OSError, ValueError) as e:
+            name = p.relative_to(root) if p.is_relative_to(root) else p
+            fallbacks.append(f"MCP timings {name} left out ({type(e).__name__}: {e}): the shards are planned without it")
+    return good, fallbacks
+
+
+def plan_shards(root: Path, tests: list[str], test_seconds: Path | None, cap: int, out: Path,
+                committed: bool = True) -> tuple[list[str], str, list[str]]:
+    """The shards, a note on them, and the fallbacks taken (a timings file left out)."""
     shard = load_module(root / "tools" / "mcp" / "shard.py", "plan_lanes_shard")
-    times = shard.load_timings([test_seconds]) if test_seconds and test_seconds.is_file() else {}
+    paths, fallbacks = readable(root, [p for p in (test_seconds, root / COMMITTED_TIMINGS if committed else None)
+                                       if p and p.is_file()])
+    times = shard.load_timings(paths)
     n = shard_count(shard, tests, times, root / "tools" / "mcp" / "tests", cap)
     out.mkdir(parents=True, exist_ok=True)
     (out / "tests.txt").write_text("\n".join(tests) + "\n")
     command = [sys.executable, "-I", str(root / "tools/mcp/shard.py"), "plan", "--tests", str(out / "tests.txt"),
-               "--out", str(out)]
-    if times:
-        command += ["--timings", str(test_seconds)]
+               "--out", str(out), "--chunk-seconds", str(CHUNK_SECONDS)]
+    if paths:
+        command += ["--timings", *map(str, paths)]
     for k in range(1, n + 1):
         command += ["--shard", f"{k}:{SHARD_WORKERS}"]
     r = subprocess.run(command, cwd=str(root), capture_output=True, text=True, errors="replace")
     if r.returncode != 0:
-        return [], f"tools/mcp/shard.py plan exited {r.returncode}: {r.stderr.strip()[-300:]}"
+        return [], f"tools/mcp/shard.py plan exited {r.returncode}: {r.stderr.strip()[-300:]}", fallbacks
     estimate = json.loads((out / "plan.json").read_text())["estimate_seconds"]
+    sources = " and ".join(([COMMITTED_TIMINGS] if root / COMMITTED_TIMINGS in paths else []) +
+                           (["the recorded test seconds"] if test_seconds in paths else []))
     return [str(k) for k in range(1, n + 1)], (f"{len(tests)} MCP test(s) in {n} shard(s) of {SHARD_WORKERS} editors, "
-                                               f"the longest estimated at {estimate / 60:.0f} min"
-                                               f"{'' if times else ' (no recorded test seconds: 30 s a test)'}")
+                                               f"the longest estimated at {estimate / 60:.0f} min, by "
+                                               f"{sources or f'no timings ({shard.DEFAULT_SECONDS:.0f} s a test)'}"), fallbacks
 
 
 # ---------------------------------------------------------------------------------------- the rules
@@ -494,8 +528,9 @@ def main(argv: list[str]) -> int:
             tests, why = list_tests(root, names)
             cap = MAX_SHARDS if args.event in ("full", "nightly") else MAX_PLANNED_SHARDS
             if tests:
-                shards, why = plan_shards(root, tests, args.test_seconds.resolve() if args.test_seconds else None, cap,
-                                          out / "mcp-plan")
+                shards, why, timing_fallbacks = plan_shards(root, tests, args.test_seconds.resolve() if args.test_seconds
+                                                            else None, cap, out / "mcp-plan", args.event != "nightly")
+                result["fallbacks"] += timing_fallbacks
             if shards:
                 notes.append(why)
             else:

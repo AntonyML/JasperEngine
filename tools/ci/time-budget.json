@@ -336,21 +336,37 @@
     "seconds": 2127,
     "reason": "baseline: the most merge-queue runs 44745111854, 44735818671 and PR run 44850307863 measured when the budget began"
    },
-   "test_title_library.py::test_gate_1": {
-    "seconds": 1344,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791, 861-1,344 s in PR run 44850307863"
+   "test_title_library.py::test_gate_1_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
    },
-   "test_title_library.py::test_gate_2": {
-    "seconds": 1344,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791, 861-1,344 s in PR run 44850307863"
+   "test_title_library.py::test_gate_2_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
    },
-   "test_title_library.py::test_gate_3": {
-    "seconds": 1344,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791, 861-1,344 s in PR run 44850307863"
+   "test_title_library.py::test_gate_3_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
    },
-   "test_title_library.py::test_gate_4": {
-    "seconds": 1344,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791, 861-1,344 s in PR run 44850307863"
+   "test_title_library.py::test_gate_4_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
+   },
+   "test_title_library.py::test_gate_5_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
+   },
+   "test_title_library.py::test_gate_6_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
+   },
+   "test_title_library.py::test_gate_7_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
+   },
+   "test_title_library.py::test_gate_8_of_8": {
+    "seconds": 1200,
+    "reason": "the Title Art library gate (S84 R36), an eighth of the library's items: estimated from the gate's 2,891-4,812 s in three PR runs, consecutive parts are uneven; ratchet once runs measure it"
    },
    "test_saved_output_determinism.py::test_fixture_scenes_save_the_same_drawn_or_not": {
     "seconds": 984,
@@ -637,8 +653,8 @@
  "files": {
   "mcp": {
    "test_title_library.py": {
-    "seconds": 4217,
-    "reason": "the Title Art library gate (S84 R36): 2,901 s in PR run 44838738791, 4,217 s in 44850307863; its four shards run in editors of their own"
+    "seconds": 4812,
+    "reason": "the Title Art library gate (S84 R36): 2,891-4,812 s in PR runs 44838738791, 44850307863, 44871357924; its eight parts run in editors of their own"
    },
    "test_voxels.py": {
     "seconds": 2270,
