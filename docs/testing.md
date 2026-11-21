@@ -1086,7 +1086,7 @@ none), and each missing input widened its lane to everything. `tools/ci/plan_inp
 The plan records a reason for every suite and MCP file it selects (`check_changed.REASON_KINDS`), in
 `check-changed.json` (`unit_reasons`, `mcp_selected[].kind`) and `lanes.json` (`selection`), and the
 `changes` job prints it in its summary (`selection.md`: a row per test lane, the first 40 reasons,
-what widened the plan and the plan inputs' commits and ages):
+what widened the plan and the plan inputs' commits and when they were published):
 
 | Kind | A suite or file runs because |
 |---|---|

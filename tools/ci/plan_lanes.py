@@ -449,7 +449,7 @@ def selection_markdown(sel: dict, fallbacks: list[str], manifest: dict) -> str:
         made = manifest.get(name)
         if made:
             inputs.append(f"{label} of {str(made.get('commit', '?'))[:12]} (run {made.get('run', '?')}, "
-                          f"{(time.time() - float(made.get('created', 0))) / 86400:.1f} days old)")
+                          f"published {(time.time() - float(made.get('created', 0))) / 86400:.1f} days ago)")
     if manifest:
         lines += ["", "Plan inputs (ci-plan-inputs): " + ("; ".join(inputs) or "none")]
     return "\n".join(lines) + "\n"
