@@ -1089,7 +1089,7 @@ gh run download <run> -p 'ci-report-*'         # its JSON, per lane
 (no filter: the merge queue's unit and HTML UI lanes, the editor's two parts added up); the tests and
 files above a cap are listed with their measured seconds and a reason. `report.py collect` measures
 each lane's tests against it and the PR comment lists what is over, marked advisory: `Check` does not
-count it. A listed test may grow by `tolerance` (1.5, a runner's noise), a total by `total_tolerance`.
+count it. A listed test may grow by `tolerance` (2: one runner measured the same tests 1.4 to 1.7 times another), a total by `total_tolerance` (1.5).
 What is over gets cheaper (above, "Writing load-robust tests"; one owner per contract, a smaller check
 where it covers the same contract) or its budget raised in the PR, with the reason a reviewer reads:
 
