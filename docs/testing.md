@@ -1089,6 +1089,30 @@ what widened the plan and the plan inputs' commits and ages):
 | `full` | the event runs the whole suite (merge queue units, a full run, the nightly) |
 | `fallback` | a widening ran the whole suite, and says which (no map, a stale map, a new source, CMake, a test's data, `.github/`) |
 
+**Shadow mode** measures what the selection would miss before anyone trusts it further. A run that
+runs more than a PR would (the merge queue: every unit test; a `full=true` run; the nightly: the whole
+MCP suite) carries in `lanes.json` a `shadow`: what a PR's selection of its diff would run
+(`plan_lanes.py shadow_selection`; the nightly's diff is the one since the coverage map's commit,
+`--shadow-base`, planned with the inputs a PR would have had). `tools/ci/shadow.py check` judges each
+failed test of a scope the run ran whole (unit core, editor, HTML UI, MCP) against it:
+
+- **caught**: the PR selection runs it; **miss**: it leaves it out; **pre-existing or flaky**: left
+  out, but the history saw it fail within 7 days; **no change to blame**: the diff is empty.
+- `ci.yml`'s `shadow` job (merge queue, push, dispatch; read-only) prints the record in its summary
+  and uploads it as the artifact `shadow`; the nightly's `Shadow selection` job judges its own MCP
+  run, gathers the `shadow` artifacts of CI's runs since its last record, appends them to
+  `shadow.jsonl` on `ci-plan-inputs` (the tracked report, the newest 500 records) and prints
+  `shadow.py report` of it. `python3 tools/ci/plan_inputs.py fetch --out /tmp/i && python3
+  tools/ci/shadow.py report --history /tmp/i/shadow.jsonl` reads it anywhere.
+- A miss is a selection gap until shown otherwise: find why the selection left the test out (a
+  dependency no input records), and fix the rule with a test in `tools/test_check_changed.py`.
+- Replayed over the 50 merge-queue runs with plans from 2026-11-16 to 2026-11-20 (their
+  `check-changed.json` against their unit, HTML UI and MCP reports): 422 failures caught, 91
+  pre-existing or flaky, 6 misses: five HTML UI tests at their first failure in run 43871305894 (a
+  change with no HTML UI file; they failed in every later run that ran them, so `main` had broken
+  them), and `PhysicsContactsTest.ContactProcessingCostIsSmall` (a cost budget, failed again two days
+  later on an unrelated change).
+
 **Rollback**: the repository variable `CI_FULL_SELECTION` set to `true` turns the selection off: a PR
 or merge-queue run whose change builds runs every lane whole (unit and HTML UI unfiltered, the whole
 MCP CI suite), and its plan says so in `fallbacks`; prose nothing reads still runs nothing.
