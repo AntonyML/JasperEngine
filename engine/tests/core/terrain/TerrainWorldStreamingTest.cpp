@@ -44,7 +44,7 @@ using jasperengine::Transform;
 
 namespace {
 
-    void writeFile(const std::filesystem::path& path, const std::vector<uint8_t>& bytes) {
+    void terrainWorldStreamingWriteFile(const std::filesystem::path& path, const std::vector<uint8_t>& bytes) {
         std::filesystem::create_directories(path.parent_path());
         std::ofstream file(path, std::ios::binary);
         file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -65,7 +65,7 @@ namespace {
                 buildOverviewColour(*tile, manifest.lattice, colours, 0);
                 std::vector<uint8_t> bytes;
                 ASSERT_TRUE(encodeTile(*tile, zstdCodec(), TileEncodeOptions{}, bytes));
-                writeFile(folder / ("tiles/" + std::to_string(x) + "_" + std::to_string(z) + ".jtile"), bytes);
+                terrainWorldStreamingWriteFile(folder / ("tiles/" + std::to_string(x) + "_" + std::to_string(z) + ".jtile"), bytes);
                 setOverviewPatch(overview, *tile);
                 const TileMinMax whole = tileNodeMinMax(*tile, manifest.lattice, manifest.lattice.tileLevel(), 0, 0);
                 manifest.tiles.push_back(WorldTileInfo{TileCoord(x, z), whole.min, whole.max});
@@ -73,9 +73,9 @@ namespace {
         }
         std::vector<uint8_t> bytes;
         ASSERT_TRUE(encodeOverview(overview, manifest.lattice, zstdCodec(), 3, bytes, nullptr));
-        writeFile(folder / "overview.jtile", bytes);
+        terrainWorldStreamingWriteFile(folder / "overview.jtile", bytes);
         encodeWorldBin(manifest, bytes);
-        writeFile(folder / "world.bin", bytes);
+        terrainWorldStreamingWriteFile(folder / "world.bin", bytes);
     }
 
     struct WorldScene {
