@@ -115,7 +115,8 @@ def push(repo: Path, commit: str, lease: str | None, remote: str = "origin") -> 
 def build_commit(repo: Path, old: str | None, files: dict[str, bytes], message: str) -> str:
     """A parentless commit of old's tree with files written over it."""
     with tempfile.TemporaryDirectory(prefix="plan-inputs-index-") as tmp:
-        env = dict(IDENTITY, GIT_INDEX_FILE=str(Path(tmp) / "index"))
+        # (a workflow's commits are the bot's; by hand, whoever runs it)
+        env = dict(IDENTITY if os.environ.get("GITHUB_ACTIONS") else {}, GIT_INDEX_FILE=str(Path(tmp) / "index"))
         if old:
             r = git(repo, "read-tree", old, env=env)
             if r.returncode != 0:
