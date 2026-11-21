@@ -87,6 +87,9 @@ class Judge(unittest.TestCase):
         self.assertEqual(rec["scopes"], ["core"])
         self.assertEqual([m["lane"] for m in rec["misses"]], ["unit-core"])
         self.assertEqual(rec["ran"], {"core": 10})
+        # the merge queue leaves an advisory unit lane out (it runs on the push to main): not judged there
+        lanes["lanes"]["unit"] = {"run": False}
+        self.assertNotIn("core", sh.whole_scopes(lanes))
 
     def test_a_run_that_ran_no_narrowed_test_judges_nothing(self):
         # (a push to main builds the test trees without running them)

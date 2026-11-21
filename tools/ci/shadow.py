@@ -69,8 +69,9 @@ def whole_scopes(lanes: dict) -> list[str]:
     the fields (an older one) counts as whole."""
     found = []
     unit_run, unit_filter = lanes.get("unit_run", {}), lanes.get("unit_filter", {})
+    unit_lane = lanes.get("lanes", {}).get("unit", {"run": True}).get("run")
     for name in ("core", "editor"):
-        if unit_run.get(name, True) and not unit_filter.get(name, ""):
+        if unit_lane and unit_run.get(name, True) and not unit_filter.get(name, ""):
             found.append(name)
     htmlui = lanes.get("lanes", {}).get("htmlui", {"run": True})
     if htmlui.get("run") and not lanes.get("htmlui_filter", ""):
