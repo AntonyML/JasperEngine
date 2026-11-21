@@ -511,8 +511,9 @@ A file's tests share an editor and run in order, so a file is one piece of work,
 `TESTS_INDEPENDENT = "why"` (each test sets up what it needs and runs in an editor of its own, in
 any order) or `TESTS_INDEPENDENT = ("why", ["test_x_*"])` for some of its tests (those use nothing
 the file's other tests leave, nor do the others use theirs): their tests may be split into chunks,
-each with its own worker process and editor (`run_tests.py --split-seconds N`). `test_html_ui_examples.py` (each example's golden) and the
-Khronos models of `test_materials_pbr.py` (`test_khronos_<Model>`) declare it.
+each with its own worker process and editor (`run_tests.py --split-seconds N`). `test_html_ui_examples.py` (each example's golden), the
+Khronos models of `test_materials_pbr.py` (`test_khronos_<Model>`) and the parts of the Title Art
+library's gate (`test_title_library.py`, `test_gate_<k>_of_8`) declare it.
 
 ### Caches and CPU caps
 
@@ -1001,6 +1002,40 @@ edit. Lint and the platform lanes run in the queue whatever the list says. The p
 what the queue left out instead, as the queue would have (below), so every merged change still gets
 their results a few hours after it lands, in the push run's report.
 
+### How the MCP shards are balanced
+
+`changes` plans the `mcp` lane's shards (`tools/ci/plan_lanes.py`, `tools/mcp/shard.py plan`): each
+file is one chunk (one editor, its tests in order), a `TESTS_INDEPENDENT` file's tests are cut into
+chunks of about 10 min, and the chunks go longest first to whichever of a shard's two workers ends
+first. The lane ends with its slowest shard, so the times have to be right:
+
+- **Committed timings first**: `tools/mcp/ci-timings.json` holds each CI-suite file's seconds (its
+  tests summed) and each test of a `TESTS_INDEPENDENT` file, medians of PR and merge-queue shards. A
+  file's tests without a time of their own share what its seconds leave (a test split since the
+  refit keeps the file's total), at least the file's default when some are timed. Then the nightly's
+  per-test seconds (the `mcp-timings` cache) for the files it lacks, then its default a test (the
+  suite's mean). The nightly plans by its own seconds alone: its shards build the games a PR's skip.
+  An unreadable file is left out, and the report's fallbacks say so.
+- **The refit**: `mcp-timings-refit.yml`, daily and on demand, runs `tools/ci/mcp_timings.py fetch`
+  (the `mcp.json` of the newest 20 ci.yml runs of this repository's own branches) and `refit`: one
+  sample per run of each file, the median after dropping samples over 3 times or under a third of it,
+  nothing from a single sample, and a new value only outside 25 % (at least 15 s) of the committed one.
+  When an entry moved, it force-pushes `ci/mcp-timings-refit` and opens or updates its pull request
+  (`tools/mcp/ci-timings.json` is on `CI_NOTHING_READS`: its PR runs only `changes` and `Check`).
+  GitHub Actions may not open pull requests here and its token's push starts no pull_request run:
+  with the secret `MCP_TIMINGS_TOKEN` it does both, without it the job dispatches `ci.yml` on the branch
+  and fails until the PR exists.
+- **The shard count**: the fewest shards that no larger count (up to 8 on a PR and in the queue) beats
+  by more than the 4 min of setup each added shard costs (checkout, image, editor install: median
+  236 s over 46 shards). Once the longest chunk sets the length, more shards save nothing.
+- **A long test** is a piece no plan splits: the Title Art library's gate (52 to 103 min as one test)
+  runs as `test_gate_<k>_of_8`. The longest chunk now is `test_voxels.py` (38 min).
+
+From the PR and merge-queue runs of 2026-11-19/20 (`tools/ci/mcp_timings.py fetch`, then each plan
+replayed on the measured medians): planned without timings (15 of 20 runs: the cache was gone) the 8
+shards took 23 to 99 min; by the nightly's seconds (its game builds an hour each, a PR's skip them)
+18 to 81 min in 7 shards; by the committed timings, 7 shards of 38 to 42 min.
+
 ### What each event runs
 
 | | PR push | merge queue | push to `main` | `full=true` dispatch |
@@ -1015,8 +1050,8 @@ their results a few hours after it lands, in the push run's report.
 | `windows-editor-tests` | with the Windows editor leg | the same; not while advisory | while advisory the same; else no | yes |
 
 - **Nothing reads it**: a change only under `docs/specs/`, `docs/superpowers/`, `docs/engine-gaps/`,
-  `docs/openengine-analysis/`, `docs/test-cleanup/`, `.claude/`, a root `*-LEDGER.md` or `README.md`
-  runs only `changes` and `Check`, on a PR and in the queue. The rest of `docs/` counts as building:
+  `docs/openengine-analysis/`, `docs/test-cleanup/`, `.claude/`, a root `*-LEDGER.md`, `README.md` or
+  `tools/mcp/ci-timings.json` runs only `changes` and `Check`, on a PR and in the queue. The rest of `docs/` counts as building:
   the editor embeds the MCP guide, and tests read other docs.
 - **Ledgers** ride in the PR of the work they record, so they cost no run of their own.
 - **Stricter than check-changed**: any building change runs every platform lane, Web and Android
@@ -1072,8 +1107,8 @@ their results a few hours after it lands, in the push run's report.
 - **Nightly** (`nightly.yml`, 03:17 UTC, or dispatched): the slow configurations (HTML UI on Vulkan
   and under ASan, TSan, texture formats on lavapipe, the unity builds of the editor, the engine and
   both unit-test trees, every fixture's smoke on OpenGL, GLES3 and Vulkan through
-  `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt player parity) and the whole MCP CI suite, which also refreshes the coverage map and the shard
-  timings. A failure opens or updates the issue
+  `tools/ci/nightly-smoke.sh`, the pthreads web gate, prebuilt player parity) and the whole MCP CI suite, which also refreshes the coverage map and the
+  nightly's own shard timings (the `mcp-timings` cache). A failure opens or updates the issue
   labelled `nightly`. When `main` moved, it publishes the prerelease `nightly-YYYYMMDD` (the newest 14
   are kept); the slow lanes do not hold it back.
 - **Stable** (`release.yml`, dispatched with a `vX.Y.Z` version, an optional commit that defaults to
