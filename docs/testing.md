@@ -1115,6 +1115,52 @@ gh run download <run> -p 'ci-report-*'         # its JSON, per lane
 - Windows: `tools/ci/windows.sh <step>` in Git Bash inside an x64 Native Tools prompt. macOS:
   `tools/ci/macos.sh <step>` with Xcode.
 
+### Job setup
+
+What a job does before its build or test step, paid by every job of a run (about 30 Linux jobs on a
+PR or in the queue, about 100 in the nightly).
+
+- **Free disk** (`.github/actions/free-disk`): an `ubuntu-latest` runner starts with about 87 GB
+  free of 145 (2026-11-20). The action removes the preinstalled Android SDK, .NET, GHC, CodeQL and
+  Docker images (about 26 GB, 1-2.5 min) only when `/` has less free than the job's `need`: its
+  largest use of `/` seen in its reports' `disk` line (the build tree, the image and the caches), plus
+  a quarter and 10 GB. Measured use in GB (2026-11-20, PR, queue and nightly runs) and the `need`
+  set:
+
+  | Job | Use | `need` |
+  |---|---|---|
+  | `asan` (editor; core 30) | 55 | 80 |
+  | `android` (every ABI, queue) | 44 | 65 |
+  | `unit` (editor; core 19) | 40 | 60 |
+  | `smoke` | 33 | 55 |
+  | `web` | 17 | 35 |
+  | `linux`, `htmlui` | 14, 13 | 30 |
+  | `mcp` | 5 | 20 |
+  | nightly `slow` (TSan; the others 5-30) | 56 | 80 |
+  | nightly MCP and coverage shards | 23 | 40 |
+  | nightly `parity` | 87 | none: always frees |
+  | release players Linux, Android, web | 44, 49, 12 | 65, 75, 25 |
+
+  A job without `need` always frees. A job whose `need` is not met after the removal gets a warning
+  in its log; raise its `need` when its reported use grows.
+- **Image** (`.github/actions/image`): pulls `ghcr.io/<owner>/jasperengine-<target>-build:<tag>`
+  anonymously (the packages are public) and logs `image: pulled <ref> in <n> s`. A tag the registry
+  does not have (a PR that changes `docker/`, until its merge runs `images.yml`) is built in the job
+  from the registry's layer cache and logs `is not in the registry; building it`, then
+  `image: built <ref> in <n> s`; a missing tag is asked for once, any other pull failure twice.
+  `images.yml` pushes zstd layers, which unpack about 4 times as fast as gzip (Docker 23 or later
+  pulls them; `JASPER_DOCKER_IMAGE=<ref>` needs one locally); tags pushed before that stay gzip until
+  the weekly rebuild.
+- **Editor install** (artifact `editor-install`, from `linux` to `mcp` and `smoke`; the nightly's
+  `nightly-editor-install`): `tools/ci/editor_install.sh pack` leaves out the folders the install copies
+  unchanged from the checkout (the Title Art HDRIs, fonts and thumbnails, the sound library: half the
+  archive, already compressed), and `unpack` copies them back from the job's checkout of the same
+  commit: 199 MB to 100 MB. A folder the build changed travels in the archive.
+- **Checkout**: depth 1, except `changes` (every commit, `filter: blob:none`), `mcp` (depth 2: the
+  title golden ledger compares the merge commit with its base) and the nightly's and the release's
+  build jobs (every commit and tag for `git describe`, `filter: blob:none`: the history without the
+  old file contents).
+
 ### Measured lane times
 
 Warm-cache times are not measured yet: the first runs after CI lands on `main` fill this table, and
