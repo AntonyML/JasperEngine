@@ -109,6 +109,10 @@ SELF_TESTS = {"tools/check_changed.py": "tools/test_check_changed.py", "tools/ch
               "tools/ci/shadow.py": "tools/ci/test_shadow.py", "tools/ci/test_shadow.py": "tools/ci/test_shadow.py",
               "tools/ci/mcp_gate.py": "tools/ci/test_mcp_gate.py", "tools/ci/test_mcp_gate.py": "tools/ci/test_mcp_gate.py",
               "tools/ci/pr-evidence.sh": "tools/ci/test_pr_evidence.py", "tools/ci/test_pr_evidence.py": "tools/ci/test_pr_evidence.py"}
+# tools/<dir>/test_<x>.py beside a changed tools/<dir>/<x>.py is its owner test, unless it needs what
+# only its lane has (it takes arguments)
+SELF_TESTS_ELSEWHERE = {"tools/crash/test_symbolicate.py": "takes the built jasperengine-crash-test",
+                        "tools/ci/test_player_cli.py": "needs a built editor and the runtime image (the smoke lane)"}
 # the shader lint, with its own tests, when an engine shader changes (.claude/rules/rendering.md)
 SHADER_LINT_TEST = "tools/ci/test_check_shader_lod.py"
 # an MCP test file, or what classifies it, changes: every file must stay classified for the CI suite
@@ -334,9 +338,19 @@ class Plan:
             self.unit_reasons[binary].setdefault(suite, (kind, why))
 
 
+def owner_test(path: str) -> str | None:
+    """The test beside a tool's Python (tools/<dir>/test_<x>.py of tools/<dir>/<x>.py, or itself)."""
+    if not (path.startswith("tools/") and path.endswith(".py")) or path.startswith("tools/mcp/tests/"):
+        return None
+    p = Path(path)
+    test = p if p.name.startswith("test_") else p.with_name(f"test_{p.name}")
+    rel = test.as_posix()
+    return rel if (ROOT / rel).is_file() and rel not in SELF_TESTS_ELSEWHERE else None
+
+
 def plan_builds(files: list[str], plan: Plan) -> None:
     for f in files:
-        test = SELF_TESTS.get(f)
+        test = SELF_TESTS.get(f) or owner_test(f)
         if test and test not in plan.self_tests:
             plan.self_tests.append(test)
         if match(f, CI_SUITE_GUARD_TRIGGERS) and CI_SUITE_GUARD not in plan.self_tests:

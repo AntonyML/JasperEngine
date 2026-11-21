@@ -164,6 +164,16 @@ class Builds(unittest.TestCase):
             self.assertEqual(p.builds, ["linux", "unit-tests", "web", "android"], trigger)
             self.assertTrue(p.unit_all and p.mcp_all, trigger)
 
+    def test_a_tool_runs_the_test_beside_it(self):
+        # tools/<dir>/x.py with tools/<dir>/test_x.py beside it: its owner test (before: none, unless listed)
+        self.assertEqual(self.plan("tools/procmat/import_mm_nodes.py").self_tests, ["tools/procmat/test_import_mm_nodes.py"])
+        self.assertEqual(self.plan("tools/procmat/test_import_mm_nodes.py").self_tests, ["tools/procmat/test_import_mm_nodes.py"])
+        self.assertEqual(self.plan("tools/ci/unit_split.py").self_tests, ["tools/ci/test_unit_split.py"])
+        # a test that needs arguments (a built binary) is left to its lane; no test beside it: nothing
+        self.assertEqual(self.plan("tools/crash/symbolicate.py").self_tests, [])
+        self.assertEqual(self.plan("tools/ci/test_player_cli.py").self_tests, [])
+        self.assertEqual(self.plan("tools/gen_blue_noise.py").self_tests, [])
+
     def test_ci_nothing_reads(self):
         for f in ("docs/specs/S01-cxx20.md", "docs/superpowers/specs/x.md", "docs/engine-gaps/a.md",
                   "docs/openengine-analysis/b.md", "docs/test-cleanup/c.md", "PIXEL-ART-LEDGER.md", "README.md"):

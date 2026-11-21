@@ -433,6 +433,9 @@ tools/check-changed --no-mcp                  # builds and unit tests only, said
 tools/build.sh exec linux tools/check-changed # inside the Linux image (no web or Android build there)
 ```
 
+- Tool tests: a changed `tools/<dir>/<x>.py` runs `tools/<dir>/test_<x>.py` beside it (and a changed
+  test itself), unless it takes arguments only its lane has (`SELF_TESTS_ELSEWHERE`); `SELF_TESTS`
+  names the rest. CI's lint lane runs every tool test that needs no build (`tools/ci/lint.sh`).
 - Lints with triggers: a changed MCP test file runs `tools/ci/check-mcp-ci-suite.py`; a changed
   engine source (not `engine/libs`, `engine/tests`) runs `tools/check_event_clears.py` (every
   `FunctionSubscribe` member is in its holder's `forEachEvent`, every component holder in
