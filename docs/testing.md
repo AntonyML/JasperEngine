@@ -909,7 +909,12 @@ name of its own) or listed in `jasperengine_skip_unity_build(REASON ... SOURCES 
 sources that include Xlib (macros such as `None` and `Status`), and the HTML UI and MCP tool
 sources, which keep one generic helper set (`lower`, `trim`, `Target`...) per file. A new
 `namespace {}` helper in our code must not reuse a name another source of the target defines at
-file scope.
+file scope. Nor may a source hand the sources after it anything at file scope: a `using namespace`
+of anything but `jasperengine` and `jasperengine::editor` (take the names it uses, or put the
+tests in that namespace), a global alias such as `using Json = ...` (give it a name of the file's
+own), or a macro (`#undef` it at the end). A name an engine header shares with an editor one
+(`SelectionState`, `View`, `pixelart`, `test`) is spelled out where both are in sight. Each tree
+CI builds compiles with `UNITY=1`: `tools/build.sh linux`, and `unit-tests` for both suites.
 
 ### Build speed
 
@@ -1140,7 +1145,7 @@ Cold builds on a GitHub-hosted `ubuntu-latest` runner (4 vCPU), ccache off, 2026
 | `UNIT_SUITE=core RUN=0 tools/build.sh unit-tests` | 43 |
 | `UNIT_SUITE=editor RUN=0 tools/build.sh unit-tests` | 111 |
 | `SKIP_ENGINE=1 tools/build.sh linux` | 73 |
-| the same three with `UNITY=1` | do not compile (a file-scope `lower` defined twice in one unit, `LuaBridgeAddon.h` and `GradientField.cpp` broken by a neighbour's macros); the nightly's unity job builds them |
+| the same three with `UNITY=1` | not measured on a runner; on a 16-core host, "Unity build (R25)" below |
 
 From the first PR runs (cold): the core tests ran in 65 min on llvmpipe, the editor tests' share is
 in the editor leg; under ASan the `*GpuSlow` suites took 135 of 167 test minutes (hence their
@@ -1173,6 +1178,17 @@ The Chrome for Testing headless shell in `docker/web.Dockerfile`, and `uv` and K
 `docker/linux.Dockerfile`, are pinned by version and sha256 and bumped by hand, as are the MCP
 harness's packages (`tools/mcp/requirements.txt`). Every workflow action is pinned by its full commit
 SHA, with its version in a comment.
+
+### Downloads retry, builds and tests do not
+
+A one-off network failure while fetching something does not fail a job: the images' apt
+(`docker/apt-retries.conf`), `wget` and `curl` retry with their own flags, `sdkmanager` in a loop;
+Gradle retries through `systemProp.org.gradle.internal.*` in
+`engine/workspaces/androidstudio/gradle.properties` (Gradle 9.6 ignores the keys without
+`systemProp.`), and the NDK is installed before Gradle with a retry; a workflow's download commands
+(`brew`, `choco`, `curl`, `gh release download`) run through `tools/ci/retry.sh`, and the Vulkan SDK
+action gets a second step when the first fails. Nothing else is retried: a flaky test gets `DISABLED_`
+and an issue.
 
 ## Known gaps
 
@@ -1259,12 +1275,19 @@ leaks (S08's reflection tests leaked about 84 MB that way).
 
 ### Unity build (R25)
 
-`UNITY=1 tools/build.sh linux` and the unity engine and test trees build. A cold build of
-`jasperengine-editor` (the editor and the shared engine) in the Linux image, `-j 8`, no ccache,
-Release, before the S01 merge: 1,361 s without unity, 1,034 s with it, **24 % faster**, under R25's
-25 %. The option stays (so new sources stay unity-safe),
-and no preset or job recommends it for speed. The server ran other builds at the same time, so
-the figure is approximate; re-measure on an idle host before deciding otherwise.
+`UNITY=1 tools/build.sh linux` and `UNITY=1 tools/build.sh unit-tests` (both suites) build. On a
+16-core host shared with other builds, `JOBS=8 CPUS=8 WERROR=1`, ccache off, precompiled headers
+on, 2026-11-17, one run each (seconds):
+
+| Tree | Cold | Cold, unity | Scene.cpp edited | unity | Project.cpp edited | unity |
+|---|---|---|---|---|---|---|
+| `SKIP_ENGINE=1 tools/build.sh linux` (Release) | 1,517 | 960 (-37 %) | 16 | 18 | 31 | 68 |
+| `UNIT_SUITE=core RUN=0 tools/build.sh unit-tests` | 954 | 738 (-23 %) | 69 | 82 | | |
+| `UNIT_SUITE=editor RUN=0 tools/build.sh unit-tests` | 2,910 | 1,910 (-34 %) | 52 | 50 | 78 | 138 |
+
+An edit rebuilds the 16 sources of its unit, and with ccache a unit misses whenever any of them
+changes, or when a source added to or removed from the target moves the batch boundaries after it.
+No PR lane builds unity; the nightly's unity job keeps `tools/build.sh linux` unity-safe.
 
 ### MCP, smoke (after the S01 merge)
 
