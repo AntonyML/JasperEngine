@@ -210,7 +210,17 @@ jobs:
         with:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
+      # a second try when the first fails (ci.yml's windows job)
       - uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        id: vulkan-sdk
+        continue-on-error: true
+        with:
+          vulkan_version: 1.3.296.0
+          install_runtime: false
+          cache: true
+          cache_save_if: false
+      - uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        if: steps.vulkan-sdk.outcome == 'failure'
         with:
           vulkan_version: 1.3.296.0
           install_runtime: false
@@ -262,7 +272,7 @@ jobs:
       # (nasm: dav1d's x86-64 assembly of the universal and simulator slices)
       - name: Install Ninja, ccache and NASM
         run: |
-          for tool in ninja ccache nasm; do command -v "$tool" > /dev/null || brew install "$tool"; done
+          for tool in ninja ccache nasm; do command -v "$tool" > /dev/null || tools/ci/retry.sh brew install "$tool"; done
       - uses: ./.github/actions/ccache-restore
         with:
           lane: macos
@@ -396,7 +406,17 @@ jobs:
         with:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
+      # a second try when the first fails (ci.yml's windows job)
       - uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        id: vulkan-sdk
+        continue-on-error: true
+        with:
+          vulkan_version: 1.3.296.0
+          install_runtime: false
+          cache: true
+          cache_save_if: false
+      - uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        if: steps.vulkan-sdk.outcome == 'failure'
         with:
           vulkan_version: 1.3.296.0
           install_runtime: false
@@ -450,7 +470,7 @@ jobs:
       # (nasm: dav1d's x86-64 assembly of the universal and simulator slices)
       - name: Install Ninja, ccache and NASM
         run: |
-          for tool in ninja ccache nasm; do command -v "$tool" > /dev/null || brew install "$tool"; done
+          for tool in ninja ccache nasm; do command -v "$tool" > /dev/null || tools/ci/retry.sh brew install "$tool"; done
       - uses: ./.github/actions/ccache-restore
         with:
           lane: macos

@@ -61,7 +61,7 @@ namespace{
         fs::path path;
     };
 
-    std::string asString(const std::vector<uint8_t>& bytes){
+    std::string assetIOServiceAsString(const std::vector<uint8_t>& bytes){
         return std::string(bytes.begin(), bytes.end());
     }
 
@@ -119,7 +119,7 @@ TEST_P(AssetIO, ReadsFileBytesIntoDecodeJob){
     request.path = dir.write("a.txt", "texture bytes");
     Outcome outcome;
     outcome.attach(request);
-    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return asString(bytes); });
+    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return assetIOServiceAsString(bytes); });
     finish(task);
     EXPECT_EQ(task.get(), "texture bytes");
     EXPECT_EQ(outcome.submitted.load(), 1);
@@ -131,7 +131,7 @@ TEST_P(AssetIO, ReadsOnlyTheRequestedByteRange){
     request.path = dir.write("range.bin", "0123456789abcdef");
     request.offset = 4;
     request.size = 6;
-    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return asString(bytes); });
+    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return assetIOServiceAsString(bytes); });
     finish(task);
     EXPECT_EQ(task.get(), "456789");
 }
@@ -200,7 +200,7 @@ TEST_P(AssetIO, RetryHalfWrittenFile){
     });
     AssetIOService::ReadRequest request;
     request.path = path;
-    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return asString(bytes); });
+    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return assetIOServiceAsString(bytes); });
     finish(task);
     writer.join();
     ASSERT_EQ(task.status(), TaskStatus::Completed);
@@ -221,7 +221,7 @@ TEST_P(AssetIO, ReadsResourcePack){
     AssetIOService::ReadRequest request;
     request.path = testsupport::testPackPath();   // packed only: no such file on disk
     ASSERT_FALSE(fs::exists(fs::current_path() / testsupport::testPackPath()));
-    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return asString(bytes); });
+    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return assetIOServiceAsString(bytes); });
     finish(task);
     EXPECT_EQ(task.get(), testsupport::testPackContent());
 }
@@ -384,7 +384,7 @@ TEST_F(AssetIOReaders, AWaitRunsAQueuedReadItself){
     ASSERT_TRUE(system->getGate().tryAcquire(GateClass::Default));
     AssetIOService::ReadRequest request;
     request.path = dir.write("wait.txt", "waited");
-    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return asString(bytes); });
+    Task<std::string> task = service->submitRead(request, [](std::vector<uint8_t>&& bytes){ return assetIOServiceAsString(bytes); });
     // no reader can claim it (no free slot): only the waiter's own read completes it
     testsupport::runWithWatchdog(10.0, "AWaitRunsAQueuedReadItself", [&]{
         EXPECT_EQ(task.get(), "waited");
