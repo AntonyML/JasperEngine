@@ -189,20 +189,20 @@
     "reason": "baseline: the most a merge-queue run measured (runs 44745111854, 44735818671) when the budget began"
    },
    "test_title_library.py::test_gate_1": {
-    "seconds": 1600,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: estimated from test_gate's 5,618 s (merge-queue run 44745111854) less its second render, until a run measures it"
+    "seconds": 1070,
+    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791"
    },
    "test_title_library.py::test_gate_2": {
-    "seconds": 1600,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: estimated from test_gate's 5,618 s (merge-queue run 44745111854) less its second render, until a run measures it"
+    "seconds": 1070,
+    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791"
    },
    "test_title_library.py::test_gate_3": {
-    "seconds": 1600,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: estimated from test_gate's 5,618 s (merge-queue run 44745111854) less its second render, until a run measures it"
+    "seconds": 1070,
+    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791"
    },
    "test_title_library.py::test_gate_4": {
-    "seconds": 1600,
-    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: estimated from test_gate's 5,618 s (merge-queue run 44745111854) less its second render, until a run measures it"
+    "seconds": 1070,
+    "reason": "the Title Art library gate (S84 R36), a quarter of the library's items: 655-856 s in PR run 44838738791"
    },
    "test_saved_output_determinism.py::test_fixture_scenes_save_the_same_drawn_or_not": {
     "seconds": 984,
@@ -313,8 +313,8 @@
  "files": {
   "mcp": {
    "test_title_library.py": {
-    "seconds": 5700,
-    "reason": "the Title Art library gate (S84 R36): its four shards run in editors of their own, in parallel"
+    "seconds": 3630,
+    "reason": "the Title Art library gate (S84 R36): 2,901 s in PR run 44838738791; its four shards run in editors of their own"
    },
    "test_voxels.py": {
     "seconds": 2270,
