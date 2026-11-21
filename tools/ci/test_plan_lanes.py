@@ -175,12 +175,13 @@ class Rules(unittest.TestCase):
 
     def test_push_runs_the_builds_only(self):
         r = decide("push", plan(["engine/core/Foo.cpp"], mcp=["test_a.py"]))
-        self.assertEqual(runs(r), {"changes", "unit", "htmlui", *pl.PLATFORM_LANES} - {"ios"})
+        self.assertEqual(runs(r), {"changes", "unit", "asan", "htmlui", "smoke", *pl.PLATFORM_LANES} - {"ios"})
         self.assertIn("build only", r["lanes"]["unit"]["why"])
         self.assertEqual(r["mcp"]["mode"], "none")
-        # ASan keeps no ccache entry (the 10 GB budget): a build on push would warm nothing
-        self.assertIn("no ccache entry", r["lanes"]["asan"]["why"])
-        self.assertEqual(r["build_only"], ["unit", "htmlui", "windows-editor-tests"])
+        # ASan keeps a ccache entry per binary (line tables only fit them in the budget), which only main saves
+        self.assertIn("build only", r["lanes"]["asan"]["why"])
+        self.assertEqual(pl.asan_job_names(pl.planned_asan_run(r["lanes"], r["unit_run"])), ["core", "editor"])
+        self.assertEqual(r["build_only"], ["unit", "asan", "htmlui", "windows-editor-tests"])
 
     def test_push_builds_and_leaves_the_advisory_tests_to_the_advisory_run(self):
         # the advisory tests take 4.5 h (ASan): in the push run, every push held about 14 Linux jobs that
@@ -189,8 +190,8 @@ class Rules(unittest.TestCase):
         p = plan(["editor/window/InspectorX.cpp"], unit={"core": ["Foo"], "editor": [], "htmlui": ["Css"]},
                  mcp=["test_a.py"])
         r = decide("push", p, advisory=ADVISORY)
-        self.assertEqual(runs(r), {"changes", "unit", "htmlui", *pl.PLATFORM_LANES} - {"ios"})
-        self.assertEqual((r["build_only"], r["advisory_off"]), (["unit", "htmlui", "windows-editor-tests"], []))
+        self.assertEqual(runs(r), {"changes", "unit", "asan", "htmlui", *pl.PLATFORM_LANES} - {"ios"})
+        self.assertEqual((r["build_only"], r["advisory_off"]), (["unit", "asan", "htmlui", "windows-editor-tests"], []))
         self.assertEqual(r["mcp"]["mode"], "none")
         self.assertIn("build only", r["lanes"]["unit"]["why"])
         self.assertTrue(r["dispatch_advisory"])
@@ -263,13 +264,20 @@ class Rules(unittest.TestCase):
             self.assertEqual(decide(event, p, superseded_by=("c" * 40, "a")), decide(event, p), event)
 
     def test_push_runs_no_lane_that_keeps_no_cache(self):
-        # a push run is for the caches PRs restore: smoke and ios keep no entry, so on push they would
-        # take a runner (ios a macOS one, of 5) for nothing; the merge queue ran them
+        # a push run is for the caches PRs restore: ios keeps no entry, so on push it would take a macOS
+        # runner (of 5) for nothing; the merge queue ran it
         for files in (["engine/core/Foo.cpp"], ["editor/window/InspectorX.cpp"]):
             r = decide("push", plan(files, mcp=["test_a.py"]))
-            for name in ("smoke", "ios"):
-                self.assertFalse(r["lanes"][name]["run"], (files, name))
-                self.assertIn("no cache", r["lanes"][name]["why"], name)
+            self.assertFalse(r["lanes"]["ios"]["run"], files)
+            self.assertIn("no cache", r["lanes"]["ios"]["why"])
+
+    def test_push_warms_the_smoke_cache_when_an_export_reads_the_change(self):
+        # only main saves caches, so a smoke lane that never runs on push never warms its ccache
+        r = decide("push", plan(["engine/core/Foo.cpp"], mcp=["test_a.py"]))
+        self.assertTrue(r["lanes"]["smoke"]["run"], r["lanes"]["smoke"])
+        self.assertIn("cache", r["lanes"]["smoke"]["why"])
+        r = decide("push", plan(["editor/window/InspectorX.cpp"], mcp=["test_a.py"]))
+        self.assertFalse(r["lanes"]["smoke"]["run"], r["lanes"]["smoke"])
 
     def test_full_and_nightly(self):
         r = decide("full", None)
@@ -346,8 +354,8 @@ class Rules(unittest.TestCase):
             {"job": "editor-2", "suite": "editor", "part": "2/2", "other": "1"}])
         both = [line for line in pl.github_output(doc, {"core": True, "editor": True}).splitlines() if line.startswith("asan_jobs=")]
         self.assertEqual(json.loads(both[0].split("=", 1)[1]), [{"job": "core", "suite": "core"}, {"job": "editor", "suite": "editor"}])
-        # a lane that does not run has no jobs (push builds the unit trees, not ASan's)
-        doc["lanes"] = dict(doc["lanes"], asan={"run": False, "why": "push"})
+        # a lane that does not run has no jobs
+        doc["lanes"] = dict(doc["lanes"], asan={"run": False, "why": "no unit test sees the change"})
         self.assertIn("asan_jobs=[]", pl.github_output(doc, {"core": True, "editor": True}).splitlines())
 
     def test_unit_jobs(self):

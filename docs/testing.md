@@ -821,6 +821,7 @@ the option errors.
 | `JASPERENGINE_UNITY_BUILD` | OFF | unity builds of our own targets, 16 sources per unit |
 | `JASPERENGINE_PCH` | ON (editor tree), OFF (`engine/`) | precompiled headers of our own targets, GCC and Clang (below) |
 | `JASPERENGINE_LINKER` | AUTO | lld for Debug and RelWithDebInfo builds that ship nothing; `DEFAULT`, `LLD`, `MOLD`, `GOLD` |
+| `JASPERENGINE_DEBUG_INFO` | `full` (a first configure: the environment's `JASPERENGINE_DEBUG_INFO`) | `lines`: line tables only wherever the tree has debug information (below) |
 | `JASPERENGINE_VENDORED_UNITY` | ON, OFF for a shipped game | Jolt unity-built |
 
 `engine/CMakeLists.txt` is also the top-level file of every exported game, so all of these default
@@ -953,6 +954,18 @@ edit rebuilds of one tree, with the host's load recorded) and `tools/perf/build_
   Android image ccache names the compiler by `--version`: the NDK is unpacked in each container, so
   its mtime changes every run.
   `base_dir` is not set: it would hand the compiler relative paths and change `__FILE__`.
+- **Debug information** (`JASPERENGINE_DEBUG_INFO`, `engine/cmake/JasperDebugInfo.cmake`): `lines`
+  turns every `-g` a tree gets (Debug and RelWithDebInfo, a shipped game's split symbols) into GCC's
+  `-g1` or Clang's `-gline-tables-only` (Emscripten included); a Release tree without debug
+  information gets none, and MSVC keeps `/Z7` (it has no such level). Backtraces, crash reports and
+  sanitizer reports still name each frame's function, file and line (the logger's backtraces use the
+  dynamic symbols, `dladdr`); a debugger sees no types or local variables. CI builds every tree with
+  it (`JASPERENGINE_DEBUG_INFO=lines` in `ci.yml`; `tools/build.sh` passes `-DJASPERENGINE_DEBUG_INFO`
+  to each tree it configures, `full` when unset, and the variable into the image, where the games the
+  editor configures take it as their default; `tools/smoke-test.sh` passes it too), so the lanes'
+  ccache entries fit the budget ("CI"). Nothing else sets it: local builds, `build-release.yml`'s
+  editors and players, and the games users export keep full debug information. Set it to reproduce
+  a lane exactly.
 - **Linker** (`JASPERENGINE_LINKER=AUTO`): lld (the Linux image installs it) for Debug and
   RelWithDebInfo builds that ship nothing, where GNU ld spent 20-53 s per link; Release builds,
   the editor release and every shipped game keep the toolchain's linker.
@@ -1082,9 +1095,9 @@ shards took 23 to 99 min; by the nightly's seconds (its game builds an hour each
 | `linux`, `web`, `android`, `windows`, `macos` | when anything that builds changed | yes | yes, to warm the caches (`windows`: the editor leg's build only) | `linux` when `mcp` or `smoke` runs (their editor install); `windows` for `windows-editor-tests` (the editor leg only) | yes |
 | `ios` | when anything that builds changed | yes | no (no cache) | no | yes |
 | `unit`, `htmlui` | the suites the plan selects | all, unfiltered; not while advisory | build only (the caches, the deps dumps) | while advisory all, unfiltered | all |
-| `asan` | the unit lane's suites | all, unfiltered; not while advisory | no (no cache) | while advisory all | all |
+| `asan` | the unit lane's suites | all, unfiltered; not while advisory | build only (each binary's cache) | while advisory all | all |
 | `mcp` | the planned CI-suite files | the planned files, over the group's diff against `main`; not while advisory | no | while advisory the planned files, over the diff since the last advisory run | the whole CI suite |
-| `smoke` | when a game-building path changed | yes; not while advisory | no (no cache) | while advisory yes | yes |
+| `smoke` | when a game-building path changed | yes; not while advisory | when a game-building path changed (its cache) | while advisory yes | yes |
 | `windows-editor-tests` | with the Windows editor leg | the same; not while advisory | no | while advisory yes | yes |
 
 - **Nothing reads it**: a change only under `docs/specs/`, `docs/superpowers/`, `docs/engine-gaps/`,
@@ -1101,9 +1114,10 @@ shards took 23 to 99 min; by the nightly's seconds (its game builds an hour each
 - **Push to `main`** builds what keeps a cache and nothing else (`tools/ci/plan_lanes.py` `build_only`
   lists what builds without its tests): it saves the caches (ccache per lane), and a PR restores what
   `main` saved, never what the queue did; and it publishes the deps dumps `changes` plans from (below,
-  "Plan inputs"). The queue built and
-  tested the same commit, so a push runs no check: not `ios`, `smoke`, ASan or the Windows engine
-  legs, which keep no cache entry, nor any step the queue ran (`MAIN_STAGE` in `ci.yml`).
+  "Plan inputs"). The queue built and tested the same commit, so a push runs no check: not `ios` or
+  the Windows engine legs, which keep no cache entry, nor any step the queue ran (`MAIN_STAGE` in
+  `ci.yml`). ASan builds both binaries for their entries, and `smoke` runs when a game-building path
+  changed, for its entry.
 - **One push run at a time.** Merge-queue groups land one push each, some minutes apart (2026-11-15
   to 20: 21 pushes, gaps of 62 s, 3 and 4 min among 20). Push runs share one concurrency group without
   cancel-in-progress: one runs, the newest waits, and GitHub drops an older waiting run before it takes
@@ -1124,8 +1138,8 @@ shards took 23 to 99 min; by the nightly's seconds (its game builds an hour each
   a model with 270 min runs gives each merged change its results 5.7 h after it lands on average (at
   most 8.8 h), in 15 runs instead of 21, never two at once. Running them in every push run took 4.5 h
   but up to three runs at a time (five or six at two to four times the pushes); an hourly schedule
-  averaged 5.9 h (7.5 to 7.9 h at two to four times the pushes). The unit and HTML UI jobs build again
-  in the advisory run (the editor tests' tree keeps no cache entry), about 150 Linux minutes a run.
+  averaged 5.9 h (7.5 to 7.9 h at two to four times the pushes). The unit, ASan and HTML UI jobs build
+  again in the advisory run, from the entries the push runs saved (an advisory run saves none).
 - **ccache in CI**: a build runs with no size limit (a cleanup in the middle of a build evicts the
   restored entries it has not reached yet, and each miss then evicts more: a PR that changed one test
   file hit 5 of 5,279 compiles). `ccache-save` then evicts every entry the run neither used nor wrote
@@ -1137,27 +1151,36 @@ shards took 23 to 99 min; by the nightly's seconds (its game builds an hour each
   entries of linux, unit-core and Android, and the plan inputs, the coverage map and the Vulkan SDK
   were gone. A cap below the working set loses the start of the build, not all of it. The caches
   share GitHub's 10 GB per repository (the repository's `max_cache_size_gb`); working sets from each
-  lane's `ccache-save` (no precompiled headers), sizes as saved:
+  lane's `ccache-save` (no precompiled headers, line tables only: `JASPERENGINE_DEBUG_INFO=lines`,
+  "Build speed"), in decimal GB (ccache's caps are decimal; `du -h` prints binary), from PR 131's
+  runs 44775260806 and 44806837004:
 
-  | Cache | Working set (GB) | Cap | Entry |
-  |---|---|---|---|
-  | linux | 1.5 (saved 1.44-1.46) | 1.6G | yes |
-  | unit-core | 1.34 | 1.4G | yes |
-  | macOS | 1.30-1.37 | 1.4G | yes |
-  | htmlui | 1.66 (2,176 compiles, Release) | 1.7G | yes |
-  | Windows editor | 0.91 | 1.0G | yes |
-  | Android | 0.63 | 0.7G | yes |
-  | web | 0.48 | 0.6G | yes |
-  | Gradle, Vulkan SDK, MCP timings | 0.73, 0.21, under 0.01 | | yes |
-  | Windows OpenGL | 1.4 | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
-  | unit-editor | 4.0 | | no |
-  | asan-core, asan-editor | 5.3 both (one job, PR 26) | | no: neither binary's fits what is left, so ASan never runs on push, and runs cold |
-  | smoke | 3.5 | | no |
+  | Cache | Working set (GB) | With full debug information | Cap | Entry |
+  |---|---|---|---|---|
+  | linux | 0.87 | 1.5 | 0.95G | yes |
+  | unit-core | 0.37 | 1.34 | 0.4G | yes |
+  | unit-editor | 0.80 | 4.0 | 0.85G | yes |
+  | asan-core | 0.74 | 2.1 | 0.8G | yes |
+  | asan-editor | 1.61 | 4.6 | 1.7G | yes |
+  | htmlui | 0.78 (2,176 compiles, Release) | 1.66 | 0.85G | yes |
+  | macOS | 0.84 | 1.30-1.37 | 0.9G | yes |
+  | Windows editor | 0.92 (MSVC: `/Z7` as before) | 0.91 | 0.95G | yes |
+  | Android | 0.27 | 0.63 | 0.3G | yes |
+  | web | 0.24 | 0.48 | 0.3G | yes |
+  | smoke | 1.93 (the player runtime and two Compile builds, which share nothing: each its own directory) | 3.5 | 0.5G | yes, the last-used part: the second Compile build |
+  | Gradle, Vulkan SDK, MCP timings, uv | 0.73, 0.21, under 0.01 each | | | yes |
+  | Windows OpenGL | 1.4 | | | no: the lane ends with its slowest leg, and D3D11 and Vulkan cold (57-99 min) take about as long as OpenGL cold with the core tests (79-108) |
 
-  At most 8.4 GB of caps plus 0.95 GB of the rest, 9.35 GB (8.8 GB at these working sets). A cache
-  with no entry builds cold, its job still reusing what an earlier step of the same job compiled, as
-  do Windows D3D11 and Vulkan. A lane that gives its entry up has its prefix in the `caches` job's
-  second list, so its last entry goes at once instead of holding the budget for 7 days.
+  At most 8.5 GB of caps plus 0.96 GB of the rest, 9.46 GB (8.9 GB at these working sets, smoke
+  cut to its cap). Every lane but smoke has a cap about 5 % above its working set: a cut costs more
+  than the difference, since ccache empties each of its 16 subdirectories that is over its share
+  down to 80 % of it (`limit_multiple`): a cut entry holds about 92 % of its cap, and asan-editor,
+  restored from a 1.6G cut of its 1.61 GB, hit 88.9 % of its compiles against 96.4 % uncut. Smoke,
+  last in line (the slowest cold lanes that run on every PR came first: unit-editor, then ASan),
+  takes what is left and keeps its last-used part. A cache with no entry builds cold, its job still
+  reusing what an earlier step of the same job compiled, as do Windows D3D11 and Vulkan. A lane that
+  gives its entry up has its prefix in the `caches` job's second list, so its last entry goes at
+  once instead of holding the budget for 7 days.
 - **Full run on any branch**: `gh workflow run ci.yml --ref <branch> -f full=true`.
 
 ### Plan inputs
