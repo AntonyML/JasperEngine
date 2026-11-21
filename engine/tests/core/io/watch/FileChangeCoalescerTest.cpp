@@ -14,8 +14,8 @@ using namespace jasperengine;
 
 namespace {
 
-    using Clock = FileChangeCoalescer::Clock;
-    using ms = std::chrono::milliseconds;
+    using FileChangeCoalescerClock = FileChangeCoalescer::Clock;
+    using fileChangeCoalescerMs = std::chrono::milliseconds;
     using Type = watch::RawEvent::Type;
 
     class FakeEnvironment : public FileChangeCoalescer::Environment {
@@ -62,12 +62,12 @@ namespace {
     protected:
         FakeEnvironment env;
         FileChangeCoalescer coalescer{env};
-        Clock::time_point now = Clock::time_point() + std::chrono::hours(1);
+        FileChangeCoalescerClock::time_point now = FileChangeCoalescerClock::time_point() + std::chrono::hours(1);
 
         void raw(Type type, const std::string& path, const std::string& oldPath = {}, bool directory = false) {
             coalescer.add(watch::RawEvent{type, path, oldPath, directory}, now);
         }
-        void advance(int milliseconds) { now += ms(milliseconds); }
+        void advance(int milliseconds) { now += fileChangeCoalescerMs(milliseconds); }
         // takes every 10 ms for `span` ms; everything that came out
         std::vector<FileChange> run(int span = 1000) {
             std::vector<FileChange> out;
@@ -250,7 +250,7 @@ TEST_F(FileChangeCoalescerTests, UnderPollingARemovalWaitsForTheNextScanOfItsBac
     raw(Type::Removed, "/p/b.png");
     raw(Type::ScanDone, "");
     EXPECT_EQ(kinds(run(2000)), "") << "no time lets a removal go";
-    EXPECT_EQ(coalescer.nextDeadline(), Clock::time_point::max());
+    EXPECT_EQ(coalescer.nextDeadline(), FileChangeCoalescerClock::time_point::max());
     EXPECT_TRUE(coalescer.awaitingScan());
     // a linked folder's scan is not the project's
     coalescer.add(watch::RawEvent{Type::ScanDone, {}, {}, false, 1}, now);
@@ -370,7 +370,7 @@ TEST_F(FileChangeCoalescerTests, ForceTakesEverythingWithoutWindows) {
 TEST_F(FileChangeCoalescerTests, RescanPassesThroughAtOnce) {
     raw(Type::Rescan, "/p");
     raw(Type::Rescan, "/p");
-    EXPECT_EQ(coalescer.nextDeadline(), Clock::time_point::min());
+    EXPECT_EQ(coalescer.nextDeadline(), FileChangeCoalescerClock::time_point::min());
     EXPECT_EQ(kinds(coalescer.take(now)), "rescan:/p");
 }
 
@@ -389,6 +389,6 @@ TEST_F(FileChangeCoalescerTests, FolderRenameCarriesPendingChangesAlong) {
 }
 
 TEST_F(FileChangeCoalescerTests, IdleHasNoDeadline) {
-    EXPECT_EQ(coalescer.nextDeadline(), Clock::time_point::max());
+    EXPECT_EQ(coalescer.nextDeadline(), FileChangeCoalescerClock::time_point::max());
     EXPECT_EQ(env.stats, 0);
 }
