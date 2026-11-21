@@ -467,6 +467,37 @@ def select_units(changed: list[str], deps: dict[str, list[str]], read=lambda p: 
     return sorted(set(units)), sorted(suites)
 
 
+CONSUMER_STEPS = 6   # include steps nearest_consumers walks before it gives up
+# the vendored libraries: no walk through their insides (CI's compacted deps dumps keep only their sources)
+VENDORED = ("engine/libs/", "editor/libs/", "libs/")
+
+
+def nearest_consumers(path: str, deps: dict[str, list[str]]) -> tuple[list[str], dict[str, str], int]:
+    """A changed source the tree links but no test unit includes: the test units that include its
+    nearest consumers (a source of the tree that includes it, through that source's own header, then
+    theirs, a step at a time until a test unit includes one), each with the consumer it includes, and
+    the steps taken. Nothing when the tree does not compile or include it, or no chain reaches a test."""
+    libs = [paths for paths in deps.values() if paths and not is_test_source(paths[0])]
+    tests = [(paths[0], set(paths)) for paths in deps.values() if paths and is_test_source(paths[0])]
+    seen = set(siblings(path))
+    if not any(seen.intersection(paths) for paths in libs):
+        return [], {}, 0
+    frontier = set(seen)
+    for step in range(1, CONSUMER_STEPS + 1):
+        found = set()
+        for paths in libs:
+            if frontier.intersection(paths[1:]):
+                found.update(s for s in siblings(paths[0]) if s not in seen)
+        if not found:
+            break
+        seen |= found
+        hits = {unit: min(found & included) for unit, included in tests if found & included}
+        if hits:
+            return sorted(hits), hits, step
+        frontier = found
+    return [], {}, 0
+
+
 def in_image() -> bool:
     return Path("/.dockerenv").is_file() and not shutil.which("docker")
 
@@ -535,6 +566,26 @@ def plan_units(changes: Changes, plan: Plan, deps_core: str | None, deps_editor:
                 units.append(f)
                 why[f] = f
                 suites = sorted(set(suites) | set(gtest_suites((ROOT / f).read_text(errors="replace"))))
+        # a linked source no test unit includes (a .cpp behind another one's header): its nearest consumers
+        reached = set(why.values())
+        for f in cxx:
+            if not f.endswith(CXX) or is_test_source(f) or f in changes.deleted or f.startswith(VENDORED) \
+                    or reached.intersection(siblings(f)):
+                continue
+            near, via, steps = nearest_consumers(f, deps)
+            for unit in near:
+                if unit in why:
+                    continue
+                why[unit] = via[unit]
+                text = (ROOT / unit).read_text(errors="replace") if (ROOT / unit).is_file() else ""
+                found = gtest_suites(text)
+                suites = sorted(set(suites) | set(found))
+                plan.add_suites(name, found, "dependency", f"{unit} includes {via[unit]}, the nearest consumer of {f} "
+                                f"({steps} include step{'s' if steps > 1 else ''})")
+            if near:
+                units += [u for u in near if u not in units]
+                plan.unit_notes.append(f"{name}: no test unit includes {f}: {len(near)} that include its nearest consumers "
+                                       f"({steps} include step{'s' if steps > 1 else ''})")
         getattr(plan, f"unit_{name}").extend(suites)
         record_units(plan, name, why)
         if units:

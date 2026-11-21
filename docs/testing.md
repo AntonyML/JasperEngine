@@ -445,7 +445,12 @@ tools/build.sh exec linux tools/check-changed # inside the Linux image (no web o
 - Unit tests: the gtest suites (`TEST`, `TEST_F`, `TEST_P`, typed) of the test units that see the
   change, in `jasperengine-core-tests` and `jasperengine-editor-tests` (`--gtest_filter`, through
   `tools/build.sh unit-tests` and its no-silent-green gate); a changed test file always runs; a
-  CMake change, or test trees not built yet, run them all.
+  CMake change, or test trees not built yet, run them all. A changed source the tree links but no test
+  unit includes (a `.cpp` whose functions only other sources call) runs the units that include its
+  nearest consumers: the sources that include it, through their own headers, a step at a time until a
+  test unit includes one (`nearest_consumers`; on `main`'s dumps of 2026-11-20 it takes the core
+  tree's sources that selected nothing from 620 of 2,175 to 240, the editor tree's from 1,659 of
+  4,333 to 600; what is left registers itself, as the Lua bindings do, and no include reaches it).
 - MCP tests: the files that executed the functions the diff's hunks touch (coverage map: the whole
   file when a changed line is outside every function, a declaration or a type; a header then also
   through its `.cpp`; only new lines outside the functions touch nothing old, a new function counts
@@ -1060,9 +1065,9 @@ none), and each missing input widened its lane to everything. `tools/ci/plan_inp
 - `publish` replaces the branch with one parentless commit holding `manifest.json` (each input's
   `main` commit and run), `coverage-map.json.gz`, `deps/<tree>.deps.gz` and `shadow.jsonl` (below),
   over what the branch held; a push another job won is retried on top of it. The deps dumps are
-  compacted first (each test unit with its dependencies inside the repository, every other object
-  with its source: 150 MB of dumps become 14 MB, 0.5 MB compressed), and select the same suites
-  (`tools/ci/test_plan_inputs.py`; 400 sampled sources of the real dumps, 0 differences).
+  compacted first (every object with its dependencies inside the repository, a vendored library's
+  with its source: 152 MB of dumps become 34 MB, 1.6 MB compressed), and select the same suites
+  (`tools/ci/test_plan_inputs.py`; 150 sampled sources of the real dumps, 0 differences).
 - Writers: the `plan inputs` job of a push to `main` (the deps dumps) and the nightly's `Coverage
   map` job on `main`, the only jobs with `contents: write`, running `main`'s code. The branch is
   outside the `main` ruleset; a PR, a fork or another branch's run never writes it.

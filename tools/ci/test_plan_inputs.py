@@ -59,8 +59,11 @@ class Compact(unittest.TestCase):
         # the test units, with every dependency in the repository
         self.assertEqual(small["engine/tests/CMakeFiles/core.dir/core/FooTest.cpp.o"],
                          ["engine/tests/core/FooTest.cpp", "engine/core/Foo.h", "engine/core/Bar.h"])
-        # another object keeps its source (the "no test tree compiles it" note reads it)
-        self.assertEqual(small["engine/CMakeFiles/engine.dir/core/Foo.cpp.o"], ["engine/core/Foo.cpp"])
+        # another object keeps what it includes of the repository (nearest_consumers walks it); a vendored
+        # library's object only its source
+        self.assertEqual(small["engine/CMakeFiles/engine.dir/core/Foo.cpp.o"], ["engine/core/Foo.cpp", "engine/core/Foo.h"])
+        self.assertEqual(small["libs/x/CMakeFiles/x.dir/a.c.o"], ["engine/libs/x/a.c"])
+        self.assertEqual(cc.nearest_consumers("engine/core/Foo.cpp", small), cc.nearest_consumers("engine/core/Foo.cpp", full))
         read = lambda p: "TEST(Foo, A) {}\n"
         for changed in (["engine/core/Foo.cpp"], ["engine/core/Bar.h"], ["engine/core/Baz.h"]):
             self.assertEqual(cc.select_units(changed, small, read), cc.select_units(changed, full, read), changed)

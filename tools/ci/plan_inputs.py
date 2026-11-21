@@ -48,12 +48,13 @@ Data, not code: the inputs CI's `changes` job plans pull requests with, kept her
 cache evicts. Written only by `tools/ci/plan_inputs.py publish` from workflows on `main`; one
 commit, replaced each time. See docs/testing.md, "CI".
 """
-TEST_SOURCE_PREFIXES = ("/src/engine/tests/", "/src/editor/tests/")
+VENDORED_PREFIXES = ("/src/engine/libs/", "/src/editor/libs/", "/src/libs/")
 
 
 def compact_deps(text: str) -> str:
-    """`ninja -t deps` cut to what check-changed reads: every test unit with its dependencies inside
-    the repository (the image's /src), and every other object with its source only."""
+    """`ninja -t deps` cut to what check-changed reads: every object with its dependencies inside the
+    repository (the image's /src; the test units' select suites, the others' lead nearest_consumers
+    to them), and a vendored library's object with its source only."""
     out: list[str] = []
     header = None
     first = False
@@ -74,7 +75,7 @@ def compact_deps(text: str) -> str:
                 continue
             out.append(f"{header}:")
             out.append(f"    {path}")
-            keep = path.startswith(TEST_SOURCE_PREFIXES)
+            keep = not path.startswith(VENDORED_PREFIXES)
             continue
         if keep and path.startswith("/src/"):
             out.append(f"    {path}")
