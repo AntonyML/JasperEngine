@@ -1,0 +1,264 @@
+name: Windows release
+
+# Builds the Windows x64 editor (OpenGL backend), packages both a portable zip and an Inno Setup
+# installer, runs CLI launch checks on both packages, and optionally publishes a GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version label (default win-YYYYMMDD-<shortsha>, or e.g. v0.1.0)
+        type: string
+        default: ''
+      publish_release:
+        description: Create or update a GitHub Release with the zip and installer
+        type: boolean
+        default: true
+      prerelease:
+        description: Mark the GitHub Release as a prerelease (not latest)
+        type: boolean
+        default: true
+  push:
+    tags:
+      - 'win-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-release:
+    name: Windows editor & installer
+    runs-on: windows-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      EDITOR_TESTS: '0'
+    steps:
+      - name: LF checkout
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+          elif [[ "$REF_TYPE" == "tag" ]]; then
+            version="$REF_NAME"
+          else
+            short_sha="$(git rev-parse --short=7 HEAD)"
+            version="win-$(date -u +%Y%m%d)-$short_sha"
+          fi
+          if [[ ! "$version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+            echo "::error::Invalid version '$version' (allowed: A-Za-z0-9._+-)"
+            exit 1
+          fi
+          numeric="0.0.0.0"
+          if [[ "$version" =~ ^v?(win-)?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            numeric="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}.0"
+          elif [[ "$version" =~ ^v?(win-)?([0-9]+)\.([0-9]+)$ ]]; then
+            numeric="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.0.0"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "numeric=$numeric" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $version (numeric: $numeric)"
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - uses: ./.github/actions/ccache-restore
+        with:
+          lane: windows-editor
+          max-size: 0.95G
+
+      - name: Build and install the editor
+        env:
+          JASPERENGINE_VERSION: ${{ steps.version.outputs.version }}
+        run: tools/ci/windows.sh editor
+
+      - name: Package portable zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: tools/ci/windows.sh package "$VERSION"
+
+      - name: Launch check (portable zip)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: tools/ci/windows.sh check-cli "dist/JasperEngine-$VERSION-windows-x64.zip"
+
+      - name: Ensure Inno Setup
+        run: |
+          if ! command -v iscc >/dev/null 2>&1; then
+            for dir in "/c/Program Files (x86)/Inno Setup 6" "/c/Program Files/Inno Setup 6"; do
+              if [[ -x "$dir/ISCC.exe" ]]; then
+                echo "$dir" >> "$GITHUB_PATH"
+                export PATH="$dir:$PATH"
+                break
+              fi
+            done
+          fi
+          if ! command -v iscc >/dev/null 2>&1; then
+            tools/ci/retry.sh choco install innosetup --no-progress -y
+            for dir in "/c/Program Files (x86)/Inno Setup 6" "/c/Program Files/Inno Setup 6"; do
+              if [[ -x "$dir/ISCC.exe" ]]; then
+                echo "$dir" >> "$GITHUB_PATH"
+                export PATH="$dir:$PATH"
+                break
+              fi
+            done
+          fi
+          command -v iscc >/dev/null 2>&1 || command -v ISCC.exe >/dev/null 2>&1 \
+            || { echo "::error::Inno Setup compiler (iscc) not found"; exit 1; }
+
+      - name: Build Windows installer (Inno Setup)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NUMERIC_VERSION: ${{ steps.version.outputs.numeric }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          iscc_cmd="iscc"
+          command -v iscc >/dev/null 2>&1 || iscc_cmd="ISCC.exe"
+
+          source_win="$(cygpath -w "$PWD/instdir/bin")"
+          out_win="$(cygpath -w "$PWD/dist")"
+          iss_win="$(cygpath -w "$PWD/tools/ci/windows-installer.iss")"
+
+          vcredist_win=""
+          if [[ -n "${VCToolsRedistDir:-}" ]]; then
+            redist_unix="$(cygpath -u "$VCToolsRedistDir")"
+            found_redist="$(find "$redist_unix" -maxdepth 2 -iname 'vc_redist.x64.exe' -print -quit 2>/dev/null || true)"
+            if [[ -n "$found_redist" ]]; then
+              vcredist_win="$(cygpath -w "$found_redist")"
+            fi
+          fi
+
+          args=(
+            "/DAppVersion=$VERSION"
+            "/DNumericVersion=$NUMERIC_VERSION"
+            "/DAppURL=$REPO_URL"
+            "/DBinDir=$source_win"
+            "/DOutputDir=$out_win"
+            "/DOutputBaseFilename=JasperEngine-$VERSION-windows-x64-setup"
+          )
+          if [[ -n "$vcredist_win" ]]; then
+            args+=("/DVCRedistPath=$vcredist_win")
+          fi
+          MSYS_NO_PATHCONV=1 "$iscc_cmd" "${args[@]}" "$iss_win"
+
+      - name: Smoke test Windows installer
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          setup="$PWD/dist/JasperEngine-$VERSION-windows-x64-setup.exe"
+          [[ -f "$setup" ]] || { echo "::error::Missing installer $setup"; exit 1; }
+          install_dir="$RUNNER_TEMP/installer-smoke"
+          rm -rf "$install_dir"
+          install_win="$(cygpath -w "$install_dir")"
+          MSYS_NO_PATHCONV=1 "$setup" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER "/DIR=$install_win"
+          python tools/ci/check-call-cli.py "$install_win"
+          if [[ -f "$install_dir/unins000.exe" ]]; then
+            MSYS_NO_PATHCONV=1 "$install_dir/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          fi
+          rm -rf "$install_dir" || true
+
+      - name: Write SHA256SUMS
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd dist
+          sha256sum "JasperEngine-$VERSION-windows-x64.zip" "JasperEngine-$VERSION-windows-x64-setup.exe" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Prepare ccache for save
+        id: ccache-prep
+        if: always() && env.JASPER_CCACHE_KEY != ''
+        run: |
+          new="$(find build/.cache/ccache -type f -newer "$JASPER_CCACHE_MARKER" ! -name stats ! -name '*.lock' ! -name ccache.conf ! -path '*/tmp/*' -print -quit 2>/dev/null || true)"
+          if [[ -n "$new" ]]; then
+            CCACHE_MAXSIZE="${JASPER_CCACHE_CAP:-0.95G}" ccache --cleanup >/dev/null || true
+            ccache --zero-stats >/dev/null || true
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "save=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save ccache
+        if: always() && steps.ccache-prep.outputs.save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/.cache/ccache
+          key: ${{ env.JASPER_CCACHE_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jasperengine-windows-${{ steps.version.outputs.version }}
+          path: |
+            dist/JasperEngine-${{ steps.version.outputs.version }}-windows-x64.zip
+            dist/JasperEngine-${{ steps.version.outputs.version }}-windows-x64-setup.exe
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: ${{ github.event_name == 'push' || inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          is_prerelease="true"
+          if [[ "$EVENT_NAME" != "push" && "$INPUT_PRERELEASE" == "false" ]]; then
+            is_prerelease="false"
+          fi
+
+          notes="$(mktemp)"
+          trap 'rm -f "$notes"' EXIT
+          cat > "$notes" <<EOF
+          Windows x64 editor release built from \`$COMMIT_SHA\` (development editor build; OpenGL backend).
+
+          ### Downloads
+          - **Installer:** \`JasperEngine-$VERSION-windows-x64-setup.exe\`
+          - **Portable:** \`JasperEngine-$VERSION-windows-x64.zip\`
+
+          ### Opening unsigned builds
+          These binaries are not code-signed. When Windows SmartScreen prompts on first launch, choose **More info** -> **Run anyway**.
+
+          \`SHA256SUMS\` contains the SHA-256 checksums for both files.
+          EOF
+
+          if ! gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            flags=(--draft --target "$COMMIT_SHA" --title "JasperEngine $VERSION (Windows)" --notes-file "$notes")
+            if [[ "$is_prerelease" == "true" ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" "${flags[@]}"
+          else
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          fi
+
+          gh release upload "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber \
+            "dist/JasperEngine-$VERSION-windows-x64-setup.exe" \
+            "dist/JasperEngine-$VERSION-windows-x64.zip" \
+            "dist/SHA256SUMS"
+
+          if [[ "$is_prerelease" == "true" ]]; then
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
