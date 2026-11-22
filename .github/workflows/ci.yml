@@ -104,6 +104,8 @@ jobs:
       unit_run_editor: ${{ steps.plan.outputs.unit_run_editor }}
       unit_jobs: ${{ steps.plan.outputs.unit_jobs }}
       asan_jobs: ${{ steps.plan.outputs.asan_jobs }}
+      asan_filter_core: ${{ steps.plan.outputs.asan_filter_core }}
+      asan_filter_editor: ${{ steps.plan.outputs.asan_filter_editor }}
       unit_filter_core: ${{ steps.plan.outputs.unit_filter_core }}
       unit_filter_editor: ${{ steps.plan.outputs.unit_filter_editor }}
       htmlui_filter: ${{ steps.plan.outputs.htmlui_filter }}
@@ -547,20 +549,24 @@ jobs:
         id: image
         with:
           target: linux
+      # editor: ccache 4.5 cuts each of its 16 subdirectories to 80 % of a sixteenth of the cap once over
+      # that sixteenth, so the cap is 16 times the largest one with headroom, not the set's size: the
+      # whole build's 1.58 GB had one of 123 MB, and 1.7G dropped 415 of its 7,721 entries (docs/testing.md "CI")
       - uses: ./.github/actions/ccache-restore
         with:
           lane: asan-${{ matrix.suite }}
-          max-size: ${{ matrix.suite == 'core' && '0.8G' || '1.7G' }}
+          max-size: ${{ matrix.suite == 'core' && '0.8G' || '2.2G' }}
           toolchain: ${{ steps.image.outputs.tag }}
-      # GPU suites included: they run under Xvfb on Mesa (tools/sanitizers/lsan.supp); the unit lane's filters
+      # GPU suites included: they run under Xvfb on Mesa (tools/sanitizers/lsan.supp); the unit lane's filters,
+      # or none when the lane's own settings changed (tools/ci/plan_lanes.py asan_filter)
       - name: jasperengine-${{ matrix.suite }}-tests under ASan and UBSan
         # under the job's limit: a step past its own timeout fails (an advisory failure), where the job's
         # timeout cancels it, and Check counts a cancelled lane as red even while it is advisory
         timeout-minutes: 300
         env:
           SUITE: ${{ matrix.suite }}
-          FILTER_CORE: ${{ needs.changes.outputs.unit_filter_core }}
-          FILTER_EDITOR: ${{ needs.changes.outputs.unit_filter_editor }}
+          FILTER_CORE: ${{ needs.changes.outputs.asan_filter_core }}
+          FILTER_EDITOR: ${{ needs.changes.outputs.asan_filter_editor }}
           # a push to main that only builds (the merge queue ran the tests): the cache
           BUILD_ONLY: ${{ contains(fromJSON(needs.changes.outputs.build_only), 'asan') && 'RUN=0 ' || '' }}
         run: |
