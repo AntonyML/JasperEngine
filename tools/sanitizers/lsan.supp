@@ -36,5 +36,12 @@ leak:JPH::JobSystemThreadPool::StartThreads
 #   histories, the editor App's ProjectWindow thumbnail thread).
 # - the editor tests' own: LogListenerTest's removal tests, CompatTest's removeComputedValues,
 #   TerrainOverlayTest's overlayTerrain, and what FFmpegBackend::reloadForTesting, TextureData::
-#   loadSvgTexture and an stb_image decode under HttpTest keep. With those above, 27 of the editor
-#   tests' 802 suites end in a LeakSanitizer report when each runs alone.
+#   loadSvgTexture and TextureData::loadTexture's stb_image buffer under HttpTransfer::finish
+#   (HttpTest) keep, and a procmat bake's ownership cycle (PassPlan, GraphBake; only indirect
+#   leaks, ProceduralMaterialWindowTest). With those above, 25 of the editor tests' 802 suites end
+#   in a LeakSanitizer report when each runs alone.
+# - Jolt or stb_image frames in a report do not make it third-party: those allocations hang off the
+#   engine's leaked scenes and textures above.
+# libjack's static initialiser's allocations are not listed: miniaudio's probe unloads the library,
+# so they come from "<unknown module>" and no entry can match them. engine/tests/support/
+# TestMain.cpp keeps it loaded under ASan instead.
