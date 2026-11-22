@@ -1,25 +1,39 @@
 name: Windows release
 
-# Builds the Windows x64 editor (OpenGL backend), packages both a portable zip and an Inno Setup
-# installer, runs CLI launch checks on both packages, and optionally publishes a GitHub Release.
+# Pre-validates repo rules and installer config on Linux, then builds the Windows x64 editor
+# (OpenGL backend), packages a portable zip and an Inno Setup installer, smoke-tests both, and
+# publishes a versioned GitHub Release with auto-generated notes and SHA-256 checksums.
 on:
   workflow_dispatch:
     inputs:
+      bump:
+        description: Auto-version bump when version is empty (patch, minor, major)
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
       version:
-        description: Version label (default win-YYYYMMDD-<shortsha>, or e.g. v0.1.0)
+        description: Optional explicit version tag (e.g. v0.1.0); overrides auto-version
         type: string
         default: ''
       publish_release:
-        description: Create or update a GitHub Release with the zip and installer
+        description: Publish a GitHub Release (creates the version tag automatically)
         type: boolean
         default: true
       prerelease:
-        description: Mark the GitHub Release as a prerelease (not latest)
+        description: Mark the GitHub Release as a prerelease (uncheck for Latest)
+        type: boolean
+        default: false
+      use_persistent_cache:
+        description: Restore/save persistent ccache in a cache release (avoids 7-day cache expiry)
         type: boolean
         default: true
   push:
     tags:
       - 'win-*'
+      - 'v[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
   contents: read
@@ -29,8 +43,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows-release:
-    name: Windows editor & installer
+  preflight:
+    name: Pre-flight validation & versioning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      numeric: ${{ steps.version.outputs.numeric }}
+      previous_tag: ${{ steps.version.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Resolve version and previous tag
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 tools/ci/windows_release.py resolve-version \
+            --explicit "$INPUT_VERSION" \
+            --ref-type "$REF_TYPE" \
+            --ref-name "$REF_NAME" \
+            --bump "${INPUT_BUMP:-patch}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Check release tag availability
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          existing="$(git rev-parse --verify --quiet "refs/tags/$VERSION^{commit}" || true)"
+          if [[ -n "$existing" && "$existing" != "$COMMIT_SHA" ]]; then
+            echo "::error::Tag $VERSION already points to $existing, not $COMMIT_SHA. Pass an explicit unused version."
+            exit 1
+          fi
+
+      - name: Run fast pre-flight validations
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 tools/ci/windows_release.py validate --version "$VERSION"
+
+  build:
+    name: Windows editor & installer (${{ needs.preflight.outputs.version }})
+    needs: preflight
     runs-on: windows-latest
     timeout-minutes: 300
     permissions:
@@ -40,40 +101,17 @@ jobs:
         shell: bash
     env:
       EDITOR_TESTS: '0'
+      VERSION: ${{ needs.preflight.outputs.version }}
+      NUMERIC_VERSION: ${{ needs.preflight.outputs.numeric }}
+      PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
     steps:
       - name: LF checkout
         run: git config --global core.autocrlf false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Resolve release version
-        id: version
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ -n "$INPUT_VERSION" ]]; then
-            version="$INPUT_VERSION"
-          elif [[ "$REF_TYPE" == "tag" ]]; then
-            version="$REF_NAME"
-          else
-            short_sha="$(git rev-parse --short=7 HEAD)"
-            version="win-$(date -u +%Y%m%d)-$short_sha"
-          fi
-          if [[ ! "$version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
-            echo "::error::Invalid version '$version' (allowed: A-Za-z0-9._+-)"
-            exit 1
-          fi
-          numeric="0.0.0.0"
-          if [[ "$version" =~ ^v?(win-)?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            numeric="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}.0"
-          elif [[ "$version" =~ ^v?(win-)?([0-9]+)\.([0-9]+)$ ]]; then
-            numeric="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.0.0"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "numeric=$numeric" >> "$GITHUB_OUTPUT"
-          echo "Resolved version: $version (numeric: $numeric)"
+        with:
+          fetch-depth: 0
+          filter: blob:none
 
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
@@ -84,19 +122,94 @@ jobs:
           lane: windows-editor
           max-size: 0.95G
 
+      - name: Restore persistent ccache fallback
+        if: ${{ github.event_name == 'push' || inputs.use_persistent_cache }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count="$(find build/.cache/ccache -mindepth 2 -type f ! -name stats ! -name '*.lock' ! -name ccache.conf 2>/dev/null | head -n 50 | wc -l)"
+          if [[ "$count" -ge 50 ]]; then
+            echo "Actions cache already warmed ($count+ objects); skipping persistent fallback."
+            exit 0
+          fi
+          toolchain="msvc${VCToolsVersion:-unknown}"
+          asset="ccache-windows-editor-${toolchain}.tar.gz"
+          tmp_unix="$(cygpath -u "$RUNNER_TEMP")"
+          if gh release download build-cache-windows-msvc --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$tmp_unix" --clobber 2>/dev/null; then
+            echo "Restoring persistent ccache from $asset..."
+            tar -C build/.cache/ccache -xzf "$tmp_unix/$asset"
+            rm -f "$tmp_unix/$asset"
+            touch "$JASPER_CCACHE_MARKER"
+            du -sh build/.cache/ccache
+          else
+            echo "No persistent cache asset ($asset) found; building cold."
+          fi
+
       - name: Build and install the editor
         env:
-          JASPERENGINE_VERSION: ${{ steps.version.outputs.version }}
+          JASPERENGINE_VERSION: ${{ needs.preflight.outputs.version }}
         run: tools/ci/windows.sh editor
 
-      - name: Package portable zip
+      - name: Prepare ccache for save
+        id: ccache-prep
+        if: ${{ always() && env.JASPER_CCACHE_KEY != '' }}
+        run: |
+          save_actions="false"
+          save_persistent="false"
+          if [[ -n "${JASPER_CCACHE_MARKER:-}" && -d build/.cache/ccache ]]; then
+            new="$(find build/.cache/ccache -type f -newer "$JASPER_CCACHE_MARKER" ! -name stats ! -name '*.lock' ! -name ccache.conf ! -path '*/tmp/*' -print -quit 2>/dev/null || true)"
+            if [[ -n "$new" ]]; then
+              CCACHE_MAXSIZE="${JASPER_CCACHE_CAP:-0.95G}" ccache --cleanup >/dev/null || true
+              ccache --zero-stats >/dev/null || true
+              save_actions="true"
+              save_persistent="true"
+            fi
+          fi
+          echo "save=$save_actions" >> "$GITHUB_OUTPUT"
+          echo "save_persistent=$save_persistent" >> "$GITHUB_OUTPUT"
+
+      - name: Save ccache (Actions cache)
+        if: ${{ always() && steps.ccache-prep.outputs.save == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/.cache/ccache
+          key: ${{ env.JASPER_CCACHE_KEY }}
+
+      - name: Update persistent ccache (cache release)
+        if: ${{ always() && (github.event_name == 'push' || inputs.use_persistent_cache) && steps.ccache-prep.outputs.save_persistent == 'true' }}
+        continue-on-error: true
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          toolchain="msvc${VCToolsVersion:-unknown}"
+          asset="ccache-windows-editor-${toolchain}.tar.gz"
+          tmp_unix="$(cygpath -u "$RUNNER_TEMP")"
+          archive="$tmp_unix/$asset"
+          tar -C build/.cache/ccache --exclude='./tmp' --exclude='*.lock' -czf "$archive" .
+          size_mb=$(( $(wc -c < "$archive") / 1048576 ))
+          echo "Persistent cache archive size: ${size_mb} MiB"
+          if [[ "$size_mb" -ge 1900 ]]; then
+            echo "::warning::Persistent cache archive (${size_mb} MiB) approaches GitHub's 2 GiB limit; skipping upload."
+            rm -f "$archive"
+            exit 0
+          fi
+          if ! gh release view build-cache-windows-msvc --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create build-cache-windows-msvc --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Windows Build Cache (ccache)" \
+              --notes "Internal CI compiler cache for faster Windows builds. Not a JasperEngine release."
+          fi
+          gh release upload build-cache-windows-msvc --repo "$GITHUB_REPOSITORY" --clobber "$archive"
+          rm -f "$archive"
+
+      - name: Package portable zip
         run: tools/ci/windows.sh package "$VERSION"
 
       - name: Launch check (portable zip)
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: tools/ci/windows.sh check-cli "dist/JasperEngine-$VERSION-windows-x64.zip"
 
       - name: Ensure Inno Setup
@@ -125,8 +238,6 @@ jobs:
 
       - name: Build Windows installer (Inno Setup)
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          NUMERIC_VERSION: ${{ steps.version.outputs.numeric }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           iscc_cmd="iscc"
@@ -159,12 +270,10 @@ jobs:
           MSYS_NO_PATHCONV=1 "$iscc_cmd" "${args[@]}" "$iss_win"
 
       - name: Smoke test Windows installer
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           setup="$PWD/dist/JasperEngine-$VERSION-windows-x64-setup.exe"
           [[ -f "$setup" ]] || { echo "::error::Missing installer $setup"; exit 1; }
-          install_dir="$RUNNER_TEMP/installer-smoke"
+          install_dir="$(cygpath -u "$RUNNER_TEMP")/installer-smoke"
           rm -rf "$install_dir"
           install_win="$(cygpath -w "$install_dir")"
           MSYS_NO_PATHCONV=1 "$setup" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER "/DIR=$install_win"
@@ -174,42 +283,45 @@ jobs:
           fi
           rm -rf "$install_dir" || true
 
-      - name: Write SHA256SUMS
+      - name: Write SHA256SUMS and release notes
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          cd dist
-          sha256sum "JasperEngine-$VERSION-windows-x64.zip" "JasperEngine-$VERSION-windows-x64-setup.exe" > SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Prepare ccache for save
-        id: ccache-prep
-        if: always() && env.JASPER_CCACHE_KEY != ''
-        run: |
-          new="$(find build/.cache/ccache -type f -newer "$JASPER_CCACHE_MARKER" ! -name stats ! -name '*.lock' ! -name ccache.conf ! -path '*/tmp/*' -print -quit 2>/dev/null || true)"
-          if [[ -n "$new" ]]; then
-            CCACHE_MAXSIZE="${JASPER_CCACHE_CAP:-0.95G}" ccache --cleanup >/dev/null || true
-            ccache --zero-stats >/dev/null || true
-            echo "save=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "save=false" >> "$GITHUB_OUTPUT"
+          (
+            cd dist
+            sha256sum "JasperEngine-$VERSION-windows-x64-setup.exe" "JasperEngine-$VERSION-windows-x64.zip" > SHA256SUMS
+          )
+          gh_notes="$(cygpath -u "$RUNNER_TEMP")/gh-notes.md"
+          rm -f "$gh_notes"
+          api_args=(-f "tag_name=$VERSION" -f "target_commitish=$GITHUB_SHA")
+          if [[ -n "${PREVIOUS_TAG:-}" ]]; then
+            api_args+=(-f "previous_tag_name=$PREVIOUS_TAG")
           fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${api_args[@]}" --jq .body > "$gh_notes" 2>/dev/null || true
 
-      - name: Save ccache
-        if: always() && steps.ccache-prep.outputs.save == 'true'
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: build/.cache/ccache
-          key: ${{ env.JASPER_CCACHE_KEY }}
+          python tools/ci/windows_release.py release-notes \
+            --version "$VERSION" \
+            --commit "$GITHUB_SHA" \
+            --previous-tag "${PREVIOUS_TAG:-}" \
+            --github-notes "$gh_notes" \
+            --asset "dist/JasperEngine-$VERSION-windows-x64-setup.exe" \
+            --asset "dist/JasperEngine-$VERSION-windows-x64.zip" \
+            --repo-url "$REPO_URL" \
+            --run-url "$RUN_URL" \
+            --out "dist/RELEASE_NOTES.md"
+
+          cat "dist/RELEASE_NOTES.md" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: jasperengine-windows-${{ steps.version.outputs.version }}
+          name: jasperengine-windows-${{ needs.preflight.outputs.version }}
           path: |
-            dist/JasperEngine-${{ steps.version.outputs.version }}-windows-x64.zip
-            dist/JasperEngine-${{ steps.version.outputs.version }}-windows-x64-setup.exe
+            dist/JasperEngine-${{ needs.preflight.outputs.version }}-windows-x64.zip
+            dist/JasperEngine-${{ needs.preflight.outputs.version }}-windows-x64-setup.exe
             dist/SHA256SUMS
+            dist/RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 14
 
@@ -217,39 +329,24 @@ jobs:
         if: ${{ github.event_name == 'push' || inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
-          COMMIT_SHA: ${{ github.sha }}
         run: |
-          is_prerelease="true"
-          if [[ "$EVENT_NAME" != "push" && "$INPUT_PRERELEASE" == "false" ]]; then
-            is_prerelease="false"
+          is_prerelease="false"
+          if [[ "$INPUT_PRERELEASE" == "true" ]]; then
+            is_prerelease="true"
+          elif [[ "$EVENT_NAME" == "push" && "$VERSION" == win-* ]]; then
+            is_prerelease="true"
           fi
 
-          notes="$(mktemp)"
-          trap 'rm -f "$notes"' EXIT
-          cat > "$notes" <<EOF
-          Windows x64 editor release built from \`$COMMIT_SHA\` (development editor build; OpenGL backend).
-
-          ### Downloads
-          - **Installer:** \`JasperEngine-$VERSION-windows-x64-setup.exe\`
-          - **Portable:** \`JasperEngine-$VERSION-windows-x64.zip\`
-
-          ### Opening unsigned builds
-          These binaries are not code-signed. When Windows SmartScreen prompts on first launch, choose **More info** -> **Run anyway**.
-
-          \`SHA256SUMS\` contains the SHA-256 checksums for both files.
-          EOF
-
           if ! gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            flags=(--draft --target "$COMMIT_SHA" --title "JasperEngine $VERSION (Windows)" --notes-file "$notes")
+            flags=(--draft --target "$GITHUB_SHA" --title "JasperEngine $VERSION (Windows)" --notes-file "dist/RELEASE_NOTES.md")
             if [[ "$is_prerelease" == "true" ]]; then
               flags+=(--prerelease)
             fi
             gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" "${flags[@]}"
           else
-            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "dist/RELEASE_NOTES.md"
           fi
 
           gh release upload "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber \
