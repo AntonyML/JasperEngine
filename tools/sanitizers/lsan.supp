@@ -24,10 +24,6 @@ leak:luabridge::detail::ErrorCategory::message
 leak:JPH::JobSystemThreadPool::StartThreads
 
 # Not suppressed, still reported (known, left for their own fixes):
-# - CameraComponent::framebuffer is a raw `new Framebuffer()` in the component's default member
-#   initialiser that nothing deletes (copies share the pointer, so no copy may delete it): about
-#   680 bytes per camera component made (Scene::createDefaultCamera, Project::createDefaultCamera,
-#   ComponentArray slots, EntityCloner::move).
 # - exit-time ownership: objects held by raw pointers in process-lifetime statics that are never
 #   closed (the tests' static headless Projects with their scenes' SceneRenders, CommandHandle's
 #   histories, the editor App's ProjectWindow thumbnail thread).
