@@ -8,6 +8,9 @@
 # library keeps it for the process
 leak:libpulse.so
 leak:pa_context_new_with_proplist
+# the same context's internals, reported as indirect leaks whose stacks end in PulseAudio's common
+# library (built without frame pointers, so the unwinder never reaches libpulse.so or our code)
+leak:libpulsecommon
 
 # a shared library's constructors run by the dynamic loader (elf/dl-init.c), from a module
 # without symbols ("<unknown module>": the GL driver Xvfb's Mesa loads). It also covers the
@@ -31,3 +34,7 @@ leak:JPH::JobSystemThreadPool::StartThreads
 # - exit-time ownership: objects held by raw pointers in process-lifetime statics that are never
 #   closed (the tests' static headless Projects with their scenes' SceneRenders, CommandHandle's
 #   histories, the editor App's ProjectWindow thumbnail thread).
+# - the editor tests' own: LogListenerTest's removal tests, CompatTest's removeComputedValues,
+#   TerrainOverlayTest's overlayTerrain, and what FFmpegBackend::reloadForTesting, TextureData::
+#   loadSvgTexture and an stb_image decode under HttpTest keep. With those above, 27 of the editor
+#   tests' 802 suites end in a LeakSanitizer report when each runs alone.
